@@ -11,6 +11,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v3
+      - name: Ensure scripts are executable
+        run: chmod +x setup_frida.sh install.sh
       - name: Download + build Frida-Gum
         run: ./setup_frida.sh
       - name: Show Xcode version
