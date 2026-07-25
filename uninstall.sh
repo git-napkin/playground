@@ -11,10 +11,17 @@ fi
 echo "Removing Configurator application..."
 rm -rf "/Applications/Plugin Playground.app"
 
-echo "Removing core binaries..."
-rm -rf "/opt/pluginplayground/bin"
+echo "Removing core binaries and data..."
+rm -rf "/opt/pluginplayground"
+
+echo "Removing launch daemon..."
+rm -f "/Library/LaunchDaemons/com.pluginplayground.grant.plist"
+
+echo "Removing log files..."
+rm -rf "/var/log/pluginplayground"
 
 echo "Forgetting package receipt..."
 pkgutil --forget "com.pluginplayground.core" > /dev/null 2>&1 || true
 
 echo "[-] Uninstallation complete."
+echo "    A reboot is recommended to fully deactivate any injected code."

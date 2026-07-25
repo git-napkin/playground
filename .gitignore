@@ -1,9 +1,15 @@
 .build/
 .build-cargo/
+Build/
 compile_commands.json
 .DS_Store
 *.dSYM/
 *.pkg
+
+# Frida-Gum build artifacts (downloaded by setup_frida.sh)
+libfrida-gum-arm64e-arm64.a
+fridagum.dylib
+syphon/frida-gum.h
 
 # Nix
 result

@@ -1,59 +1,259 @@
-#include "amfid_handler.h"
+#include <dlfcn.h>
+#include <mach/mach.h>
+#include <mach/mach_vm.h>
+#include <mach/thread_status.h>
+#include <ptrauth.h>
+#include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-#include <spawn.h>
-#include <sys/wait.h>
+#include <sys/sysctl.h>
+#include <syslog.h>
 #include <unistd.h>
-#include <limits.h>
 
-extern char **environ;
+#define SUPPORT_PATH "/opt/pluginplayground/"
+#define HOOK_DYLIB SUPPORT_PATH "lib/libfangs_hook.dylib"
 
-int
-main(int argc, const char *argv[])
-{
-    amfid_patch();
+#define SHELLCODE_PCFMT_OFFSET 88
+#define SHELLCODE_DLOPEN_OFFSET 164
+#define SHELLCODE_PAYLOAD_PTR_OFFSET 172
+#define SHELLCODE_SIZE 180
 
-    /* ── spawn fangs ── */
-    char fangs_path[PATH_MAX];
-    const char *slash = strrchr(argv[0], '/');
-    if (slash) {
-        size_t dirlen = slash - argv[0];
-        snprintf(fangs_path, sizeof(fangs_path),
-                 "%.*s/fangs", (int)dirlen, argv[0]);
-        if (access(fangs_path, X_OK) != 0)
-            snprintf(fangs_path, sizeof(fangs_path), ".build/fangs");
-    } else {
-        snprintf(fangs_path, sizeof(fangs_path), ".build/fangs");
-    }
+static kern_return_t (*_thread_convert_thread_state)(
+    thread_act_t thread, int direction, thread_state_flavor_t flavor,
+    thread_state_t in_state, mach_msg_type_number_t in_stateCnt,
+    thread_state_t out_state, mach_msg_type_number_t *out_stateCnt);
 
-    pid_t child;
-    posix_spawnattr_t attr;
-    posix_spawnattr_init(&attr);
+static unsigned char shell_code[] = {
+    0xFF, 0xC3, 0x00, 0xD1, 0xFD, 0x7B, 0x02, 0xA9, 0xFD, 0x83, 0x00, 0x91,
+    0xA0, 0xC3, 0x1F, 0xB8, 0xE1, 0x0B, 0x00, 0xF9, 0xE0, 0x23, 0x00, 0x91,
+    0x08, 0x00, 0x80, 0xD2, 0xE8, 0x07, 0x00, 0xF9, 0xE1, 0x03, 0x08, 0xAA,
+    0xE2, 0x01, 0x00, 0x10, 0xE2, 0x23, 0xC1, 0xDA, 0xE3, 0x03, 0x08, 0xAA,
+    0x49, 0x01, 0x00, 0x10, 0x29, 0x01, 0x40, 0xF9, 0x20, 0x01, 0x3F, 0xD6,
+    0xA0, 0x4C, 0x8C, 0xD2, 0x20, 0x2C, 0xAF, 0xF2, 0x09, 0x00, 0x00, 0x10,
+    0x20, 0x01, 0x1F, 0xD6, 0xFD, 0x7B, 0x42, 0xA9, 0xFF, 0xC3, 0x00, 0x91,
+    0xC0, 0x03, 0x5F, 0xD6, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x7F, 0x23, 0x03, 0xD5, 0xFF, 0xC3, 0x00, 0xD1, 0xFD, 0x7B, 0x02, 0xA9,
+    0xFD, 0x83, 0x00, 0x91, 0xA0, 0xC3, 0x1F, 0xB8, 0xE1, 0x0B, 0x00, 0xF9,
+    0x21, 0x00, 0x80, 0xD2, 0x89, 0x01, 0x00, 0x10, 0x20, 0x01, 0x40, 0xF9,
+    0x09, 0x01, 0x00, 0x10, 0x29, 0x01, 0x40, 0xF9, 0x20, 0x01, 0x3F, 0xD6,
+    0x09, 0x00, 0x80, 0x52, 0xE0, 0x03, 0x09, 0xAA, 0xFD, 0x7B, 0x42, 0xA9,
+    0xFF, 0xC3, 0x00, 0x91, 0xFF, 0x0F, 0x5F, 0xD6, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
-    const char *fangs_argv[argc + 1];
-    fangs_argv[0] = "fangs";
-    for (int i = 1; i < argc; i++)
-        fangs_argv[i] = argv[i];
-    fangs_argv[argc] = NULL;
+static bool os_version_at_least(int major, int minor) {
+    char str[32];
+    size_t len = sizeof(str);
+    if (sysctlbyname("kern.osproductversion", str, &len, NULL, 0) != 0)
+        return false;
+    int maj = 0, min = 0;
+    sscanf(str, "%d.%d", &maj, &min);
+    return (maj > major) || (maj == major && min >= minor);
+}
 
-    int ret = posix_spawn(&child, fangs_path, NULL, &attr,
-                          (char *const *)fangs_argv, environ);
-    posix_spawnattr_destroy(&attr);
-    if (ret != 0) {
-        fprintf(stderr, "[grant] posix_spawn(%s): %s\n",
-                fangs_path, strerror(ret));
-        amfid_unpatch();
+int main(int argc, const char *argv[]) {
+    (void)argc;
+    (void)argv;
+
+    openlog("grant", LOG_PID | LOG_NDELAY, LOG_DAEMON);
+
+    int result = 0;
+    mach_port_t task = 0;
+    thread_act_t thread = 0;
+    mach_vm_address_t code = 0;
+    mach_vm_address_t stack = 0;
+    mach_vm_address_t payload_str = 0;
+    vm_size_t stack_size = 16 * 1024;
+    uint64_t stack_contents = 0x00000000CAFEBABE;
+    pid_t pid = 1;
+    kern_return_t kr;
+
+    char payload_path[PATH_MAX];
+    if (snprintf(payload_path, sizeof(payload_path), "%s", HOOK_DYLIB) >=
+        (int)sizeof(payload_path)) {
+        syslog(LOG_ERR, "grant: payload path too long");
         return 1;
     }
-    printf("[grant] fangs spawned (pid %d)\n", child);
 
-    usleep(500000);
-    amfid_unpatch();
+    if (sizeof(shell_code) != SHELLCODE_SIZE) {
+        syslog(LOG_ERR, "grant: shellcode layout mismatch (got %zu, expected %d)",
+               sizeof(shell_code), SHELLCODE_SIZE);
+        return 1;
+    }
 
-    int wstatus;
-    waitpid(child, &wstatus, 0);
+    kr = task_for_pid(mach_task_self(), pid, &task);
+    if (kr != KERN_SUCCESS) {
+        syslog(LOG_ERR, "grant: task_for_pid(1): %s", mach_error_string(kr));
+        return 1;
+    }
+    syslog(LOG_INFO, "grant: attached to launchd");
 
-    if (WIFEXITED(wstatus))
-        return WEXITSTATUS(wstatus);
-    return 1;
+    kr = mach_vm_allocate(task, &stack, stack_size, VM_FLAGS_ANYWHERE);
+    if (kr != KERN_SUCCESS) {
+        syslog(LOG_ERR, "grant: stack alloc: %s", mach_error_string(kr));
+        return 1;
+    }
+
+    kr = mach_vm_write(task, stack, (vm_address_t)&stack_contents,
+                       sizeof(uint64_t));
+    if (kr != KERN_SUCCESS) {
+        syslog(LOG_ERR, "grant: stack write: %s", mach_error_string(kr));
+        return 1;
+    }
+
+    kr = vm_protect(task, stack, stack_size, 1, VM_PROT_READ | VM_PROT_WRITE);
+    if (kr != KERN_SUCCESS) {
+        syslog(LOG_ERR, "grant: stack protect: %s", mach_error_string(kr));
+        return 1;
+    }
+
+    kr = mach_vm_allocate(task, &code, sizeof(shell_code), VM_FLAGS_ANYWHERE);
+    if (kr != KERN_SUCCESS) {
+        syslog(LOG_ERR, "grant: code alloc: %s", mach_error_string(kr));
+        return 1;
+    }
+
+    size_t payload_len = strlen(payload_path) + 1;
+    kr = mach_vm_allocate(task, &payload_str, payload_len, VM_FLAGS_ANYWHERE);
+    if (kr != KERN_SUCCESS) {
+        syslog(LOG_ERR, "grant: payload str alloc: %s", mach_error_string(kr));
+        return 1;
+    }
+
+    kr = mach_vm_write(task, payload_str, (vm_address_t)payload_path,
+                       payload_len);
+    if (kr != KERN_SUCCESS) {
+        syslog(LOG_ERR, "grant: payload str write: %s", mach_error_string(kr));
+        return 1;
+    }
+
+    uint64_t pcfmt_address =
+        (uint64_t)ptrauth_strip(
+            dlsym(RTLD_DEFAULT, "pthread_create_from_mach_thread"),
+            ptrauth_key_function_pointer);
+    uint64_t dlopen_address =
+        (uint64_t)ptrauth_strip(dlsym(RTLD_DEFAULT, "dlopen"),
+                                ptrauth_key_function_pointer);
+    if (pcfmt_address == 0 || dlopen_address == 0) {
+        syslog(LOG_ERR,
+               "grant: could not resolve pthread_create_from_mach_thread "
+               "or dlopen");
+        return 1;
+    }
+
+    uint64_t payload_address = (uint64_t)payload_str;
+
+    memcpy(shell_code + SHELLCODE_PCFMT_OFFSET, &pcfmt_address,
+           sizeof(uint64_t));
+    memcpy(shell_code + SHELLCODE_DLOPEN_OFFSET, &dlopen_address,
+           sizeof(uint64_t));
+    memcpy(shell_code + SHELLCODE_PAYLOAD_PTR_OFFSET, &payload_address,
+           sizeof(uint64_t));
+
+    kr = mach_vm_write(task, code, (vm_address_t)shell_code,
+                       sizeof(shell_code));
+    if (kr != KERN_SUCCESS) {
+        syslog(LOG_ERR, "grant: shellcode write: %s", mach_error_string(kr));
+        return 1;
+    }
+
+    kr = vm_protect(task, code, sizeof(shell_code), 0,
+                    VM_PROT_EXECUTE | VM_PROT_READ);
+    if (kr != KERN_SUCCESS) {
+        syslog(LOG_ERR, "grant: code protect rx: %s", mach_error_string(kr));
+        return 1;
+    }
+
+    void *handle =
+        dlopen("/usr/lib/system/libsystem_kernel.dylib", RTLD_GLOBAL | RTLD_LAZY);
+    if (handle) {
+        _thread_convert_thread_state =
+            dlsym(handle, "thread_convert_thread_state");
+        dlclose(handle);
+    }
+
+    if (!_thread_convert_thread_state) {
+        syslog(LOG_ERR, "grant: thread_convert_thread_state not found");
+        return 1;
+    }
+
+    arm_thread_state64_t thread_state = {}, machine_thread_state = {};
+    thread_state_flavor_t thread_flavor = ARM_THREAD_STATE64;
+    mach_msg_type_number_t thread_flavor_count = ARM_THREAD_STATE64_COUNT;
+    mach_msg_type_number_t machine_thread_flavor_count =
+        ARM_THREAD_STATE64_COUNT;
+
+    __darwin_arm_thread_state64_set_pc_fptr(
+        thread_state,
+        ptrauth_sign_unauthenticated((void *)code, ptrauth_key_asia, 0));
+    __darwin_arm_thread_state64_set_sp(thread_state,
+                                       stack + (stack_size / 2));
+
+    kr = thread_create(task, &thread);
+    if (kr != KERN_SUCCESS) {
+        syslog(LOG_ERR, "grant: thread_create: %s", mach_error_string(kr));
+        return 1;
+    }
+
+    kr = _thread_convert_thread_state(
+        thread, 2, thread_flavor, (thread_state_t)&thread_state,
+        thread_flavor_count, (thread_state_t)&machine_thread_state,
+        &machine_thread_flavor_count);
+    if (kr != KERN_SUCCESS) {
+        syslog(LOG_ERR, "grant: thread_convert: %s", mach_error_string(kr));
+        thread_terminate(thread);
+        return 1;
+    }
+
+    if (os_version_at_least(14, 4)) {
+        thread_terminate(thread);
+        kr = thread_create_running(task, thread_flavor,
+                                   (thread_state_t)&machine_thread_state,
+                                   machine_thread_flavor_count, &thread);
+        if (kr != KERN_SUCCESS) {
+            syslog(LOG_ERR, "grant: thread_create_running: %s",
+                   mach_error_string(kr));
+            return 1;
+        }
+    } else {
+        kr = thread_set_state(thread, thread_flavor,
+                              (thread_state_t)&machine_thread_state,
+                              machine_thread_flavor_count);
+        if (kr != KERN_SUCCESS) {
+            syslog(LOG_ERR, "grant: thread_set_state: %s",
+                   mach_error_string(kr));
+            return 1;
+        }
+        kr = thread_resume(thread);
+        if (kr != KERN_SUCCESS) {
+            syslog(LOG_ERR, "grant: thread_resume: %s",
+                   mach_error_string(kr));
+            return 1;
+        }
+    }
+
+    usleep(10000);
+
+    for (int i = 0; i < 10; ++i) {
+        kr = thread_get_state(thread, thread_flavor,
+                              (thread_state_t)&thread_state,
+                              &thread_flavor_count);
+        if (kr != KERN_SUCCESS) {
+            result = 1;
+            goto terminate;
+        }
+        if (thread_state.__x[0] == 0x79616265) {
+            result = 0;
+            syslog(LOG_INFO, "grant: injection successful");
+            goto terminate;
+        }
+        usleep(20000);
+    }
+
+    syslog(LOG_ERR, "grant: injection timed out");
+    result = 1;
+
+terminate:
+    thread_terminate(thread);
+    return result;
 }

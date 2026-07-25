@@ -13,7 +13,7 @@ Plugin Playground provides a framework for intercepting and modifying the behavi
 running processes. It's the foundation for building runtime plugins, introspection tools, and
 behavior-modification tweaks on modern macOS.
 
-The fangs tracer must run as **arm64e** (the system ABI for Apple Silicon) to attach
+Plugin Playground must run as **arm64e** (the system ABI for Apple Silicon) to attach
 to launchd. If arm64e is not available on your system, toggle **Disable arm64e (PAC)** in the
 configurator — this strips PAC signing from spawned processes so injection works without the
 native arm64e ABI.

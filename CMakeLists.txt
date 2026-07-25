@@ -4,6 +4,7 @@ project(pluginplayground C CXX OBJC)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_OSX_ARCHITECTURES "arm64e")
 
 set(CODESIGN_IDENTITY "-" CACHE STRING "Codesign identity (default: ad-hoc)")
 set(INSTALL_PREFIX "/opt/pluginplayground" CACHE PATH "Installation prefix")
@@ -17,45 +18,49 @@ function(syphon_codesign target)
     )
 endfunction()
 
-# ── Core library ──────────────────────────────────────────────
-add_library(syphon STATIC
-    syphon/target.c
-    syphon/stepping.c
-    syphon/breakpoint.c
-    syphon/mach_exc.c
-    syphon/process.c
-    syphon/exe.c
-    syphon/options_loader.c
+set(SYPHON_SOURCES
+    syphon/envbuf.c
+    syphon/tweak_utils.c
 )
 
-target_include_directories(syphon PUBLIC
+set(SYPHON_INCLUDE_PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/syphon>
     $<INSTALL_INTERFACE:include/syphon>
 )
-target_link_libraries(syphon PUBLIC
+
+# ── libfangs_hook: Frida-Gum posix_spawn hook (injected into launchd) ────
+add_library(fangs_hook SHARED
+    syphon/fangs_hook.c
+    ${SYPHON_SOURCES}
+)
+target_include_directories(fangs_hook PRIVATE ${SYPHON_INCLUDE_PRIVATE})
+
+# ── libplayground_opener: per-process tweak loader ────────────────────────
+add_library(playground_opener SHARED
+    syphon/playground_opener.c
+    ${SYPHON_SOURCES}
+)
+target_include_directories(playground_opener PRIVATE ${SYPHON_INCLUDE_PRIVATE})
+target_link_libraries(playground_opener PRIVATE
+    "-framework Foundation"
     "-framework CoreFoundation"
-    "-framework Security"
 )
 
-# ── Tracers (add new executables here) ────────────────────────
-add_executable(fangs syphon/main.c)
-target_link_libraries(fangs PRIVATE syphon)
-syphon_codesign(fangs)
+# ── Privilege grant tool (launchd shellcode injector) ─────────────────────
 
-# ── Privilege grant tool (amfid hook + fangs launcher) ────────
-add_executable(grant
-    grant/amfid_handler.m
-    grant/main.m
-)
+add_executable(grant grant/main.m)
 target_include_directories(grant PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/grant")
 target_link_libraries(grant PRIVATE
     "-framework Foundation"
 )
+target_compile_options(grant PRIVATE -fobjc-arc)
+syphon_codesign(grant)
+
+# ── Configurator ──────────────────────────────────────────────────────────
 
 option(BUILD_CONFIGURATOR "Build the Configurator App" ON)
 
 if(BUILD_CONFIGURATOR)
-    # ── Configurator ─────────────────────────────────────────────
     include(FetchContent)
     FetchContent_Declare(
         Slint
@@ -66,7 +71,6 @@ if(BUILD_CONFIGURATOR)
     set(SLINT_FEATURE_STYLE_NATIVE ON CACHE BOOL "Enable native widget style")
     set(SLINT_FETCH_CONTENT ON CACHE BOOL "" FORCE)
 
-    # Persist Rust cargo artifacts outside .build so clean CMake builds reuse them
     file(MAKE_DIRECTORY "${CMAKE_SOURCE_DIR}/.build-cargo")
     if(EXISTS "${CMAKE_BINARY_DIR}/cargo")
         if(NOT IS_SYMLINK "${CMAKE_BINARY_DIR}/cargo")
@@ -117,6 +121,6 @@ if(BUILD_CONFIGURATOR)
     )
 endif()
 
-# ── Install ──────────────────────────────────────────────────
-install(TARGETS fangs grant RUNTIME DESTINATION bin)
-
+# ── Install ──────────────────────────────────────────────────────────────
+install(TARGETS grant RUNTIME DESTINATION bin)
+install(TARGETS fangs_hook playground_opener LIBRARY DESTINATION lib)

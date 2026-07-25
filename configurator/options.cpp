@@ -1,34 +1,17 @@
 #include "options.h"
+#include "file_utils.h"
 #include <CoreFoundation/CoreFoundation.h>
-#include <cstdio>
-#include <vector>
+#include <cstdlib>
+#include <spawn.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
-static const char* optionsPath() {
+static const char *optionsPath() {
     return "/opt/pluginplayground/current.options";
 }
 
-static CFDataRef readFile(const char* path) {
-    FILE* f = fopen(path, "rb");
-    if (!f) return nullptr;
-    fseek(f, 0, SEEK_END);
-    long len = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    std::vector<uint8_t> data(len);
-    fread(data.data(), 1, len, f);
-    fclose(f);
-    return CFDataCreate(kCFAllocatorDefault, data.data(), len);
-}
-
-static bool writeFile(const char* path, CFDataRef data) {
-    FILE* f = fopen(path, "wb");
-    if (!f) return false;
-    bool ok = fwrite(CFDataGetBytePtr(data), 1, CFDataGetLength(data), f) == (size_t)CFDataGetLength(data);
-    fclose(f);
-    return ok;
-}
-
 Options loadOptions() {
-    CFDataRef data = readFile(optionsPath());
+    CFDataRef data = fileRead(optionsPath());
     if (!data) return {};
 
     CFPropertyListRef plist = CFPropertyListCreateWithData(
@@ -58,18 +41,27 @@ Options loadOptions() {
     return opts;
 }
 
-static bool fixPermissionsWithAppleScript() {
-    int r = system(
-        "osascript -e 'do shell script \""
-        "mkdir -p /opt/pluginplayground && "
-        "touch /opt/pluginplayground/current.options && "
-        "chmod 666 /opt/pluginplayground/current.options"
-        "\" with administrator privileges' "
-        ">/dev/null 2>&1");
-    return r == 0;
+static bool runPrivilegedScript(const char *script) {
+    pid_t pid;
+    const char *args[] = {"/usr/bin/osascript", "-e", script, nullptr};
+    int r = posix_spawn(&pid, "/usr/bin/osascript", nullptr, nullptr,
+                        (char *const *)args, nullptr);
+    if (r != 0) return false;
+    int status;
+    waitpid(pid, &status, 0);
+    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 
-bool saveOptions(const Options& opts) {
+static bool fixPermissions() {
+    return runPrivilegedScript(
+        "do shell script \""
+        "mkdir -p /opt/pluginplayground && "
+        "touch /opt/pluginplayground/current.options && "
+        "chmod 644 /opt/pluginplayground/current.options"
+        "\" with administrator privileges");
+}
+
+bool saveOptions(const Options &opts) {
     CFMutableDictionaryRef dict = CFDictionaryCreateMutable(
         kCFAllocatorDefault, 3,
         &kCFTypeDictionaryKeyCallBacks,
@@ -87,10 +79,10 @@ bool saveOptions(const Options& opts) {
     CFRelease(dict);
 
     if (!data) return false;
-    bool ok = writeFile(optionsPath(), data);
+    bool ok = fileWrite(optionsPath(), data);
     if (!ok) {
-        if (fixPermissionsWithAppleScript())
-            ok = writeFile(optionsPath(), data);
+        if (fixPermissions())
+            ok = fileWrite(optionsPath(), data);
     }
     CFRelease(data);
     return ok;

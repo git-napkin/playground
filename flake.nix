@@ -60,16 +60,15 @@
             "-DFETCHCONTENT_SOURCE_DIR_SLINT=../slintSrc"
           ];
 
-          postInstall = ''
-            rm -rf $out/include
-            rm -rf $out/lib
-            rm -f $out/bin/slint-compiler
+          preInstall = ''
+            # ensure fridagum.dylib is available in build tree
+            cp "$src/fridagum.dylib" "$PWD/fridagum.dylib" 2>/dev/null || true
           '';
 
           meta = with pkgs.lib; {
             description = "General-purpose runtime tweak system for macOS Apple Silicon";
             homepage = "https://github.com/CoreBedtime/playground";
-            license = licenses.mit; # Assuming MIT, can be adjusted
+            license = licenses.mit;
             maintainers = [ ];
             platforms = [ "aarch64-darwin" ];
           };
@@ -82,7 +81,6 @@
         devShells.default = pkgs.mkShell {
           inputsFrom = [ plugin-playground ];
           buildInputs = with pkgs; [
-            # Tools for development
             clang-tools
             git
             cargo
@@ -110,12 +108,14 @@
 
             system.activationScripts.preUserActivation.text = ''
               sudo mkdir -p /opt/pluginplayground/tweaks
+              sudo mkdir -p /opt/pluginplayground/lib
               sudo mkdir -p /var/log/pluginplayground
-              sudo chmod 777 /opt/pluginplayground/tweaks
-              sudo chmod 777 /var/log/pluginplayground
+              sudo chmod 755 /opt/pluginplayground/tweaks
+              sudo chmod 755 /opt/pluginplayground/lib
+              sudo chmod 755 /var/log/pluginplayground
               if [ ! -f /opt/pluginplayground/current.options ]; then
                 sudo touch /opt/pluginplayground/current.options
-                sudo chmod 666 /opt/pluginplayground/current.options
+                sudo chmod 644 /opt/pluginplayground/current.options
               fi
             '';
 
@@ -124,7 +124,6 @@
                 Label = "com.pluginplayground.grant";
                 ProgramArguments = [ "${cfg.package}/bin/grant" ];
                 RunAtLoad = true;
-                KeepAlive = true;
                 StandardOutPath = "/var/log/pluginplayground/grant.log";
                 StandardErrorPath = "/var/log/pluginplayground/grant.err";
               };
