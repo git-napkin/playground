@@ -31,11 +31,14 @@ set(SYPHON_INCLUDE_PRIVATE
 # ── libfangs_hook: Frida-Gum posix_spawn hook (injected into launchd) ────
 add_library(fangs_hook SHARED
     syphon/fangs_hook.c
+    syphon/exe.c
+    syphon/options_loader.c
     ${SYPHON_SOURCES}
 )
 target_include_directories(fangs_hook PRIVATE ${SYPHON_INCLUDE_PRIVATE})
 target_link_libraries(fangs_hook PRIVATE
     "-framework CoreFoundation"
+    "-framework Security"
 )
 
 # ── libplayground_opener: per-process tweak loader ────────────────────────

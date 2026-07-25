@@ -1,4 +1,6 @@
 #include "envbuf.h"
+#include "exe.h"
+#include "options_loader.h"
 #include "tweak_utils.h"
 #include <ctype.h>
 #include <dlfcn.h>
@@ -40,6 +42,7 @@ static int (*GetDarwinRoleNp)(const posix_spawnattr_t *__restrict attr,
 static char **ammonia_blacklist = NULL;
 static size_t ammonia_blacklist_count = 0;
 static bool disable_xpcproxy_injection = false;
+static FangsOptions g_fangs_opts;
 
 #define PRIO_DARWIN_ROLE_UI_FOCAL 0x1
 #define PRIO_DARWIN_ROLE_UI 0x2
@@ -252,7 +255,17 @@ static int spawn_with_env(int (*spawn_fn)(pid_t *, const char *,
 
 Spawn:
     {
-        int k = spawn_fn(pid, path, ac, ab, __argv, (char *const *)playground);
+        const char *spawn_path = path;
+        char *pac_path = NULL;
+        if (g_fangs_opts.disablePAC) {
+            pac_path = getready_process(path);
+            if (pac_path) {
+                spawn_path = pac_path;
+                syslog(LOG_INFO, "fangs_hook: PAC stripping '%s' -> '%s'", path, pac_path);
+            }
+        }
+        int k = spawn_fn(pid, spawn_path, ac, ab, __argv, (char *const *)playground);
+        free(pac_path);
         envbuf_free(playground);
         return k;
     }
@@ -275,6 +288,10 @@ static int SpawnPNew(pid_t *restrict pid, const char *restrict path,
 
 __attribute__((constructor)) static void fangs_hook_init(void) {
     openlog("fangs_hook", LOG_PID | LOG_NDELAY, LOG_DAEMON);
+
+    g_fangs_opts = fangs_load_options();
+    syslog(LOG_INFO, "fangs_hook: options loaded: disablePAC=%d legacyAmmonia=%d pauseInjection=%d",
+           g_fangs_opts.disablePAC, g_fangs_opts.useLegacyAmmonia, g_fangs_opts.pauseInjection);
 
     load_ammonia_blacklist();
     disable_xpcproxy_injection = access(FLAG_DISABLE_XPCPROXY, F_OK) == 0;
