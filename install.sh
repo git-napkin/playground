@@ -5,6 +5,11 @@ VERSION="1.0.0"
 OUTPUT="${1:-PluginPlayground-${VERSION}.pkg}"
 SRC="$(cd "$(dirname "$0")" && pwd)"
 
+if ! test -f "$SRC/fridagum.dylib"; then
+    echo "[+] Running Frida prerequisite setup..."
+    sh "$SRC/setup_frida.sh"
+fi
+
 echo "[+] Building..."
 mkdir -p "$SRC/.build"
 cmake -S "$SRC" -B "$SRC/.build" \
