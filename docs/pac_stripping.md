@@ -6,17 +6,17 @@ Apple Silicon Macs natively run system processes using the `arm64e` ABI, which i
 
 When Plugin Playground injects custom tweaks (`.dylib` files) into a system process, the injected library must load into the target process's memory space. If the target is running as `arm64e` with PAC enabled, loading unauthenticated binaries can cause kernel panics or PAC violations.
 
-## Current status
+## How it works
 
-PAC stripping is currently a **Work In Progress** (the configurator has a toggle labeled as such). The feature is not yet implemented in the fork — the original `exe.c` module that performed Mach-O header modification (`depacify`, `strip_code_signature`, resign) has been removed as part of the migration from the HW breakpoint architecture to Frida-Gum.
+PAC stripping is implemented in `syphon/exe.c` (the "Depacify" engine):
 
-## Future plan
-
-When implemented, PAC stripping will:
-1. Intercept the target executable before spawn (at the `posix_spawn` hook level).
-2. Modify the raw Mach-O header to remove the `CPUTYPE_ARM64E` flag, downgrading the executable to standard `arm64`.
-3. Strip the `LC_CODE_SIGNATURE` load command.
-4. Spawn the modified executable.
+1. In `fangs_hook` (loaded inside launchd), the `disablePAC` option is read from `/opt/pluginplayground/current.options` on startup.
+2. On each `posix_spawn`/`posix_spawnp` interception, if `disablePAC` is true, `getready_process()` is called with the target path.
+3. If the target is an `.app` bundle, it is copied to `/tmp/RuntimeApplications/` to avoid modifying the original.
+4. The Mach-O header is scanned: if `cpusubtype` indicates `arm64e` (`0x2`), it is zeroed to `0` (plain `arm64`). FAT binaries are handled recursively for each slice.
+5. The `LC_CODE_SIGNATURE` load command is removed (invalidated by the header change).
+6. The executable is re-signed with ad-hoc SHA-256 via `SecCodeSignerCreate`.
+7. `fangs_hook` spawns the depacified copy instead of the original.
 
 ## Alternative: Native `arm64e` Support
 
