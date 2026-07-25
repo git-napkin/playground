@@ -18,6 +18,8 @@
 #include <sys/syslimits.h>
 #include <syslog.h>
 #include <unistd.h>
+#include <dispatch/dispatch.h>
+#include <os/lock.h>
 
 #define SUPPORT_PATH "/opt/pluginplayground/"
 #define OPENER_DYLIB SUPPORT_PATH "lib/libplayground_opener.dylib"
@@ -43,6 +45,7 @@ static char **ammonia_blacklist = NULL;
 static size_t ammonia_blacklist_count = 0;
 static bool disable_xpcproxy_injection = false;
 static FangsOptions g_fangs_opts;
+static os_unfair_lock g_fangs_opts_lock = OS_UNFAIR_LOCK_INIT;
 
 #define PRIO_DARWIN_ROLE_UI_FOCAL 0x1
 #define PRIO_DARWIN_ROLE_UI 0x2
@@ -182,6 +185,42 @@ static bool is_node_sea_binary(const char *path) {
     return result;
 }
 
+static void reload_options(void) {
+    FangsOptions new_opts = fangs_load_options();
+    os_unfair_lock_lock(&g_fangs_opts_lock);
+    for (int i = 0; i < g_fangs_opts.enabledTweakCount; i++)
+        free(g_fangs_opts.enabledTweaks[i]);
+    free(g_fangs_opts.enabledTweaks);
+    g_fangs_opts = new_opts;
+    os_unfair_lock_unlock(&g_fangs_opts_lock);
+    syslog(LOG_INFO, "fangs_hook: options reloaded: disablePAC=%d",
+           new_opts.disablePAC);
+}
+
+static void setup_options_watcher(void) {
+    int fd = open("/opt/pluginplayground/current.options", O_EVTONLY);
+    if (fd < 0) {
+        syslog(LOG_WARNING,
+               "fangs_hook: cannot watch current.options: %s", strerror(errno));
+        return;
+    }
+
+    static dispatch_source_t watcher;
+    watcher = dispatch_source_create(
+        DISPATCH_SOURCE_TYPE_VNODE, fd,
+        DISPATCH_VNODE_WRITE | DISPATCH_VNODE_EXTEND,
+        dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0));
+    if (!watcher) {
+        syslog(LOG_ERR, "fangs_hook: failed to create dispatch source");
+        close(fd);
+        return;
+    }
+
+    dispatch_source_set_event_handler(watcher, ^{ reload_options(); });
+    dispatch_source_set_cancel_handler(watcher, ^{ close(fd); });
+    dispatch_resume(watcher);
+}
+
 static int spawn_with_env(int (*spawn_fn)(pid_t *, const char *,
                                           const posix_spawn_file_actions_t *,
                                           const posix_spawnattr_t *,
@@ -257,7 +296,10 @@ Spawn:
     {
         const char *spawn_path = path;
         char *pac_path = NULL;
-        if (g_fangs_opts.disablePAC) {
+        os_unfair_lock_lock(&g_fangs_opts_lock);
+        bool disablePAC = g_fangs_opts.disablePAC;
+        os_unfair_lock_unlock(&g_fangs_opts_lock);
+        if (disablePAC) {
             pac_path = getready_process(path);
             if (pac_path) {
                 spawn_path = pac_path;
@@ -289,9 +331,7 @@ static int SpawnPNew(pid_t *restrict pid, const char *restrict path,
 __attribute__((constructor)) static void fangs_hook_init(void) {
     openlog("fangs_hook", LOG_PID | LOG_NDELAY, LOG_DAEMON);
 
-    g_fangs_opts = fangs_load_options();
-    syslog(LOG_INFO, "fangs_hook: options loaded: disablePAC=%d legacyAmmonia=%d pauseInjection=%d",
-           g_fangs_opts.disablePAC, g_fangs_opts.useLegacyAmmonia, g_fangs_opts.pauseInjection);
+    reload_options();
 
     load_ammonia_blacklist();
     disable_xpcproxy_injection = access(FLAG_DISABLE_XPCPROXY, F_OK) == 0;
@@ -380,5 +420,7 @@ __attribute__((constructor)) static void fangs_hook_init(void) {
     }
 
     gum_interceptor_end_transaction(interceptor);
+
+    setup_options_watcher();
     syslog(LOG_INFO, "fangs_hook: initialized");
 }
