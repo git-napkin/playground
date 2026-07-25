@@ -82,7 +82,7 @@ char **envbuf_setenv(char **envp, const char *name, const char *value) {
     char *envToSet = malloc(strlen(name) + strlen(value) + 2);
     if (!envToSet)
         return envp;
-    sprintf(envToSet, "%s=%s", name, value);
+    snprintf(envToSet, strlen(name) + strlen(value) + 2, "%s=%s", name, value);
     int existingEnvIndex = envbuf_find((const char **)envp, name);
     if (existingEnvIndex >= 0) {
         free(envp[existingEnvIndex]);

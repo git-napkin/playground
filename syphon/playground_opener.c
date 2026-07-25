@@ -103,6 +103,12 @@ static void try_load_tweak(const char *dir, const char *d_name,
     if (!is_tweak_enabled(d_name)) {
         syslog(LOG_INFO, "opener: %s not in enabled tweaks list, skipping",
                d_name);
+        LoadedModule *existing = find_loaded_module(full_path);
+        if (existing && existing->handle != NULL) {
+            dlclose(existing->handle);
+            existing->handle = NULL;
+            syslog(LOG_INFO, "opener: unloaded disabled tweak %s", d_name);
+        }
         return;
     }
 
@@ -118,7 +124,8 @@ static void try_load_tweak(const char *dir, const char *d_name,
     }
 
     LoadedModule *existing = find_loaded_module(full_path);
-    if (existing && timespec_equal(&st.st_mtimespec, &existing->mtime))
+    if (existing && existing->handle != NULL &&
+        timespec_equal(&st.st_mtimespec, &existing->mtime))
         return;
 
     if (existing && existing->handle != NULL) {
