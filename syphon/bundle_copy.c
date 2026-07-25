@@ -13,7 +13,15 @@
 #include <CoreFoundation/CoreFoundation.h>
 
 bool path_is_bundle(const char *path) {
-    return path && strstr(path, ".app") != NULL;
+    if (!path) return false;
+    const char *dot = strstr(path, ".app");
+    while (dot) {
+        char c = dot[4];
+        if (c == '/' || c == '\0')
+            return true;
+        dot = strstr(dot + 4, ".app");
+    }
+    return false;
 }
 
 bool get_bundle_executable_path(const char *bundle_path, char *exec_path, size_t exec_path_size) {
@@ -123,7 +131,7 @@ static bool copy_dir_iterative(const char *root_src, const char *root_dst) {
                 pair->next = stack;
                 stack = pair;
             } else if (S_ISREG(st.st_mode)) {
-                int src_fd = open(src_sub, O_RDONLY);
+                int src_fd = open(src_sub, O_RDONLY | O_NOFOLLOW);
                 if (src_fd < 0) {
                     free(src_sub);
                     free(dst_sub);
@@ -224,38 +232,6 @@ static bool copy_dir_iterative(const char *root_src, const char *root_dst) {
 
 bool copy_dir_recursive(const char *src_path, const char *dst_path) {
     return copy_dir_iterative(src_path, dst_path);
-}
-
-bool copy_bundle_to_tmp(const char *bundle_path, char *tmp_path, size_t tmp_path_size) {
-    char template_path[PATH_MAX];
-    snprintf(template_path, sizeof(template_path), "/tmp/applaunch-XXXXXX");
-
-    char *tmp_dir = mkdtemp(template_path);
-    if (!tmp_dir) {
-        log_error("[copy_bundle] mkdtemp failed: %s", strerror(errno));
-        return false;
-    }
-
-    const char *base = strrchr(bundle_path, '/');
-    base = base ? base + 1 : bundle_path;
-
-    char dst_bundle_path[PATH_MAX];
-    snprintf(dst_bundle_path, sizeof(dst_bundle_path), "%s/%s", tmp_dir, base);
-
-    if (!copy_dir_iterative(bundle_path, dst_bundle_path)) {
-        log_error("[copy_bundle] copy_dir_recursive failed: src=%s dst=%s",
-                  bundle_path, dst_bundle_path);
-        rmdir(tmp_dir);
-        return false;
-    }
-
-    if (!get_bundle_executable_path(dst_bundle_path, tmp_path, tmp_path_size)) {
-        log_error("[copy_bundle] get_bundle_executable_path failed for: %s", dst_bundle_path);
-        rmdir(tmp_dir);
-        return false;
-    }
-
-    return true;
 }
 
 bool resign_bundle(const char *bundle_path) {

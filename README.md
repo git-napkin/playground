@@ -7,13 +7,13 @@
 An open-source runtime tweak system for macOS Apple Silicon.
 
 > [!WARNING]
-> System Integrity Protection (SIP) must be partially disabled — `csrutil enable --without debug` — this lets us access `initproc` and set hardware breakpoints on other processes. SIP only needs to allow debugging, not fully off.
+> System Integrity Protection (SIP) must be partially disabled. Use `csrutil enable --without debug`. This lets us access `initproc` and set hardware breakpoints on other processes. SIP only needs to allow debugging, not fully off.
 
 Plugin Playground intercepts and modifies running processes. Build runtime plugins, introspection tools, and behavior-modification tweaks with it.
 
 Plugin Playground must run as **arm64e** (the system ABI for Apple Silicon) to attach
 to launchd. If arm64e is not available on your system, toggle **Disable arm64e (PAC)** in the
-configurator — this strips PAC signing from spawned processes so injection works without the
+configurator. This strips PAC signing from spawned processes so injection works without the
 native arm64e ABI.
 
 The configuration app is installed to `/Applications/Plugin Playground.app`.
@@ -22,11 +22,11 @@ The configuration app is installed to `/Applications/Plugin Playground.app`.
 
 ## What tweaks do
 
-Tweaks are `.dylib` libraries injected into processes at spawn time, before `main()` runs. They can change UI rendering, alter window management, override system controls, or replace framework behavior. The injection is transparent and needs no modification to the target app. Below are two tweaks built with the runtime:
+Tweaks are `.dylib` libraries injected into processes at spawn time, before `main()` runs. They can change UI rendering, alter window management, override system controls, or replace framework behavior. No modification to the target app is needed. Below are two tweaks built with the runtime:
 
-- **Classic Dock** — replaces the modern Dock with a pre-Yosemite style (3D shelf, reflective icons, unified minimize).
+- **Classic Dock** replaces the modern Dock with a pre-Yosemite style (3D shelf, reflective icons, unified minimize).
 ![Classic Dock](.pics/ClassicDock.png)
-- **Classic Scrollbars** — restores legacy scrollbars with up/down arrows and the classic aqua thumb.
+- **Classic Scrollbars** restores legacy scrollbars with up/down arrows and the classic aqua thumb.
 <img src=".pics/ClassicScrollbars.png" height="260" alt="Classic Scrollbars">
 
 
@@ -54,7 +54,7 @@ Produces `PluginPlayground-1.0.0.pkg`. Run the `.pkg` to install, or pass a cust
 
 ## Documentation
 
-- [Ammonia (Legacy)](docs/ammonia.md)
+- [Ammonia (legacy)](docs/ammonia.md)
 - [Compilation](docs/compilation.md)
 - [Configurator](docs/configurator.md)
 - [Defaults CLI](docs/defaults.md)

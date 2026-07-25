@@ -643,25 +643,24 @@ void LoadFunction(void *interceptor) {
     char exe[PATH_MAX]; exe[0] = 0;
     self_path(exe, sizeof(exe));
 
-    fprintf(g_rpt, "Plugin Playground — Capability Test Suite\n");
+    fprintf(g_rpt, "Plugin Playground capability test suite\n");
     fprintf(g_rpt, "Process PID: %d\n", getpid());
     fprintf(g_rpt, "Executable:  %s\n", exe[0] ? exe : "(unknown)");
     fprintf(g_rpt, "Interceptor: %p\n", (void *)g_interceptor);
-    fprintf(g_rpt, "========================================\n\n");
+    fprintf(g_rpt, "\n");
     fflush(g_rpt);
 
     run_all_tests();
 
-    fprintf(g_rpt, "\n========================================\n");
+    fprintf(g_rpt, "\n");
     fprintf(g_rpt, "  PASSED: %d\n", g_pass);
     fprintf(g_rpt, "  FAILED: %d\n", g_fail);
     fprintf(g_rpt, "  TOTAL:  %d\n", g_cap);
-    fprintf(g_rpt, "========================================\n");
     fprintf(g_rpt, "Results written to: %s\n", g_log);
     if (g_fail == 0)
         fprintf(g_rpt, "\nALL CAPABILITIES VERIFIED\n");
     else
-        fprintf(g_rpt, "\nSOME CAPABILITIES FAILED — review above\n");
+        fprintf(g_rpt, "\nSOME CAPABILITIES FAILED - review above\n");
     fflush(g_rpt);
 
     fclose(g_rpt);

@@ -1,6 +1,6 @@
 # Grant
 
-A privilege escalator that injects `libfangs_hook.dylib` into `launchd` (PID 1). Gets the Frida-Gum `posix_spawn` interceptor running inside launchd before any user processes start.
+A tool that injects `libfangs_hook.dylib` into `launchd` (PID 1). Gets the Frida-Gum `posix_spawn` interceptor running inside launchd before any user processes start.
 
 1. Uses `task_for_pid(mach_task_self(), 1, &task)` to attach to launchd.
 2. Allocates stack + shellcode memory in launchd's address space via `mach_vm_allocate`.
@@ -9,4 +9,4 @@ A privilege escalator that injects `libfangs_hook.dylib` into `launchd` (PID 1).
 5. Waits for a sentinel return value (`0x79616265`) confirming the dylib loaded.
 6. Handles macOS 14.4+ `thread_create_running` vs older `thread_set_state` + `thread_resume` differences.
 
-Runs as a LaunchDaemon (`com.pluginplayground.grant`) at boot. Requires SIP disabled and the `com.apple.system-task-ports` entitlement. Required — no opt-out.
+Runs as a LaunchDaemon (`com.pluginplayground.grant`) at boot. Requires SIP disabled and the `com.apple.system-task-ports` entitlement. Required, no opt-out.

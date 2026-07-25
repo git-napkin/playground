@@ -1,4 +1,4 @@
-# Ammonia (Legacy)
+# Ammonia (legacy)
 
 A legacy macOS tweak injection system. A loader daemon injects `.dylib` files into target processes. Plugin Playground supports the legacy path (`/private/var/ammonia/core/tweaks/`) so users migrating from Ammonia can keep their existing tweaks.
 
@@ -36,7 +36,7 @@ static void ammonia_init() {
 
 ## Compilation
 
-Tweaks are compiled as universal (FAT) dylibs containing necessary architecture slices (x86_64, arm64, arm64e). 
+Tweaks are compiled as universal dylibs containing the necessary architecture slices (x86_64, arm64, arm64e).
 
 When compiling with clang, pass `-undefined dynamic_lookup` to allow unresolved symbols to be resolved at runtime by the host process. Multiple architectures are combined using the `lipo` tool. Alternatively, Xcode can produce universal libraries automatically by setting the Architectures build setting.
 

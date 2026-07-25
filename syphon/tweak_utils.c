@@ -5,6 +5,7 @@
 #include <mach-o/dyld.h>
 #include <mach-o/fat.h>
 #include <mach-o/loader.h>
+#include <os/lock.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -40,20 +41,26 @@ uint32_t swap32_if(uint32_t val, bool swap) {
 }
 
 bool macho_has_framework(const char *base, size_t size, const char *framework) {
-    (void)size;
     uint32_t magic = *(const uint32_t *)base;
     bool swap = (magic == MH_CIGAM_64 || magic == MH_CIGAM);
     uint32_t ncmds;
+    size_t header_size;
     const struct load_command *cmds;
 
     if (magic == MH_MAGIC_64 || magic == MH_CIGAM_64) {
+        if (size < sizeof(struct mach_header_64))
+            return false;
         const struct mach_header_64 *mh = (const struct mach_header_64 *)base;
         ncmds = swap ? OSSwapBigToHostInt32(mh->ncmds) : mh->ncmds;
-        cmds = (const struct load_command *)(base + sizeof(struct mach_header_64));
+        header_size = sizeof(struct mach_header_64);
+        cmds = (const struct load_command *)(base + header_size);
     } else if (magic == MH_MAGIC || magic == MH_CIGAM) {
+        if (size < sizeof(struct mach_header))
+            return false;
         const struct mach_header *mh = (const struct mach_header *)base;
         ncmds = swap ? OSSwapBigToHostInt32(mh->ncmds) : mh->ncmds;
-        cmds = (const struct load_command *)(base + sizeof(struct mach_header));
+        header_size = sizeof(struct mach_header);
+        cmds = (const struct load_command *)(base + header_size);
     } else {
         return false;
     }
@@ -62,17 +69,27 @@ bool macho_has_framework(const char *base, size_t size, const char *framework) {
     snprintf(pattern, sizeof(pattern), "/%s.framework/", framework);
     size_t plen = strlen(pattern);
 
+    const char *end = base + size;
     const struct load_command *cursor = cmds;
     for (uint32_t i = 0; i < ncmds; i++) {
+        if ((size_t)(end - (const char *)cursor) < sizeof(struct load_command))
+            return false;
         uint32_t cmd = swap ? OSSwapBigToHostInt32(cursor->cmd) : cursor->cmd;
         uint32_t cmdsize = swap ? OSSwapBigToHostInt32(cursor->cmdsize)
                                 : cursor->cmdsize;
+        if (cmdsize < sizeof(struct load_command) ||
+            (size_t)(end - (const char *)cursor) < cmdsize)
+            return false;
         if (cmd == LC_LOAD_DYLIB || cmd == LC_LOAD_WEAK_DYLIB) {
             const struct dylib_command *dc =
                 (const struct dylib_command *)cursor;
+            if ((size_t)(end - (const char *)dc) < sizeof(struct dylib_command))
+                return false;
             uint32_t name_offset = swap
                                        ? OSSwapBigToHostInt32(dc->dylib.name.offset)
                                        : dc->dylib.name.offset;
+            if (name_offset >= cmdsize)
+                return false;
             const char *dylib_path = (const char *)cursor + name_offset;
             if (strstr(dylib_path, pattern))
                 return true;
@@ -105,13 +122,20 @@ bool exe_links_to_framework(const char *exe_path, const char *framework) {
     uint32_t magic = *(const uint32_t *)mapped;
 
     if (magic == FAT_MAGIC || magic == FAT_CIGAM) {
+        if (size < sizeof(struct fat_header))
+            { munmap(mapped, size); return false; }
         const struct fat_header *fh = (const struct fat_header *)mapped;
         uint32_t narch = OSSwapBigToHostInt32(fh->nfat_arch);
+        size_t arches_size = (size_t)narch * sizeof(struct fat_arch);
+        if (size < sizeof(struct fat_header) + arches_size)
+            { munmap(mapped, size); return false; }
         const struct fat_arch *archs =
             (const struct fat_arch *)((const char *)mapped +
                                       sizeof(struct fat_header));
         for (uint32_t i = 0; i < narch; i++) {
             uint32_t offset = OSSwapBigToHostInt32(archs[i].offset);
+            if (offset >= size)
+                continue;
             if (macho_has_framework((const char *)mapped + offset,
                                     size - offset, framework)) {
                 found = true;
@@ -186,29 +210,29 @@ char *get_exe_path(void) {
 static char **s_enabled_cache = NULL;
 static int s_enabled_cache_count = 0;
 static bool s_enabled_cache_loaded = false;
+static os_unfair_lock s_enabled_cache_lock = OS_UNFAIR_LOCK_INIT;
 
-static void load_enabled_cache(void) {
-    const char *path = "/opt/pluginplayground/current.options";
+CFDictionaryRef fangs_read_plist_dictionary(const char *path) {
     FILE *f = fopen(path, "rb");
-    if (!f) return;
+    if (!f) return NULL;
 
     fseek(f, 0, SEEK_END);
     long len = ftell(f);
-    if (len < 0) { fclose(f); return; }
+    if (len < 0) { fclose(f); return NULL; }
     fseek(f, 0, SEEK_SET);
 
     char *buf = malloc((size_t)len);
-    if (!buf) { fclose(f); return; }
+    if (!buf) { fclose(f); return NULL; }
     if (!check_file_read(f, buf, (size_t)len)) {
         free(buf);
         fclose(f);
-        return;
+        return NULL;
     }
     fclose(f);
 
     CFDataRef cfData = CFDataCreateWithBytesNoCopy(
         kCFAllocatorDefault, (const UInt8 *)buf, (CFIndex)len, kCFAllocatorNull);
-    if (!cfData) { free(buf); return; }
+    if (!cfData) { free(buf); return NULL; }
 
     CFPropertyListRef plist = CFPropertyListCreateWithData(
         kCFAllocatorDefault, cfData, kCFPropertyListImmutable, NULL, NULL);
@@ -217,10 +241,17 @@ static void load_enabled_cache(void) {
 
     if (!plist || CFGetTypeID(plist) != CFDictionaryGetTypeID()) {
         if (plist) CFRelease(plist);
-        return;
+        return NULL;
     }
 
-    CFDictionaryRef dict = (CFDictionaryRef)plist;
+    return (CFDictionaryRef)plist;
+}
+
+static void load_enabled_cache(void) {
+    CFDictionaryRef dict = fangs_read_plist_dictionary(
+        "/opt/pluginplayground/current.options");
+    if (!dict) return;
+
     CFArrayRef arr = (CFArrayRef)CFDictionaryGetValue(dict, CFSTR("enabledTweaks"));
     if (arr && CFGetTypeID(arr) == CFArrayGetTypeID()) {
         CFIndex count = CFArrayGetCount(arr);
@@ -246,63 +277,39 @@ static void load_enabled_cache(void) {
 
 bool is_tweak_enabled(const char *name) {
     if (!name || !*name) return false;
+    os_unfair_lock_lock(&s_enabled_cache_lock);
     if (!s_enabled_cache_loaded) {
         load_enabled_cache();
         s_enabled_cache_loaded = true;
     }
+    bool found = false;
     for (int i = 0; i < s_enabled_cache_count; i++) {
-        if (strcmp(s_enabled_cache[i], name) == 0)
-            return true;
+        if (strcmp(s_enabled_cache[i], name) == 0) {
+            found = true;
+            break;
+        }
     }
-    return false;
+    os_unfair_lock_unlock(&s_enabled_cache_lock);
+    return found;
 }
 
 void clear_tweak_enabled_cache(void) {
+    os_unfair_lock_lock(&s_enabled_cache_lock);
     for (int i = 0; i < s_enabled_cache_count; i++)
         free(s_enabled_cache[i]);
     free(s_enabled_cache);
     s_enabled_cache = NULL;
     s_enabled_cache_count = 0;
     s_enabled_cache_loaded = false;
+    os_unfair_lock_unlock(&s_enabled_cache_lock);
 }
 
 bool check_dylib_options(const char *dir, const char *name, const char *exe) {
     char optpath[PATH_MAX];
     snprintf(optpath, sizeof(optpath), "%s/%s.options", dir, name);
 
-    FILE *f = fopen(optpath, "rb");
-    if (!f) return true;
-
-    fseek(f, 0, SEEK_END);
-    long len = ftell(f);
-    if (len < 0) { fclose(f); return true; }
-    fseek(f, 0, SEEK_SET);
-
-    char *buf = malloc((size_t)len);
-    if (!buf) { fclose(f); return true; }
-    if (!check_file_read(f, buf, (size_t)len)) {
-        free(buf);
-        fclose(f);
-        return true;
-    }
-    fclose(f);
-
-    CFDataRef cfData = CFDataCreateWithBytesNoCopy(
-        kCFAllocatorDefault, (const UInt8 *)buf, (CFIndex)len,
-        kCFAllocatorNull);
-    if (!cfData) { free(buf); return true; }
-
-    CFPropertyListRef plist = CFPropertyListCreateWithData(
-        kCFAllocatorDefault, cfData, kCFPropertyListImmutable, NULL, NULL);
-    CFRelease(cfData);
-    free(buf);
-
-    if (!plist || CFGetTypeID(plist) != CFDictionaryGetTypeID()) {
-        if (plist) CFRelease(plist);
-        return true;
-    }
-
-    CFDictionaryRef dict = (CFDictionaryRef)plist;
+    CFDictionaryRef dict = fangs_read_plist_dictionary(optpath);
+    if (!dict) return true;
     bool should_load = true;
 
     CFArrayRef frameworks = (CFArrayRef)CFDictionaryGetValue(

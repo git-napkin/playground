@@ -1,4 +1,4 @@
-# Fangs Hook
+# Fangs hook
 
 A Frida-Gum interceptor library (`libfangs_hook.dylib`) injected into launchd at runtime. Intercepts `posix_spawn`/`posix_spawnp` calls and injects the tweak loader into child UI processes.
 
@@ -10,4 +10,4 @@ A Frida-Gum interceptor library (`libfangs_hook.dylib`) injected into launchd at
 6. Propagates itself into `xpcproxy` children for recursive hook coverage.
 7. Injects `DYLD_INSERT_LIBRARIES=libplayground_opener.dylib` into eligible processes.
 
-Loaded automatically inside launchd by the `grant` daemon's shellcode injection. Required — no opt-out.
+Loaded automatically inside launchd by the `grant` daemon's shellcode injection. Required, no opt-out.

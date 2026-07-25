@@ -1,4 +1,4 @@
-# Configuration Defaults
+# Configuration defaults
 
 The Configurator saves preferences in a standard macOS XML Property List (plist) file. Configure the environment from the terminal or scripts without opening the GUI.
 
@@ -22,37 +22,44 @@ Since the config is a standard plist, modify it with `defaults` or `plutil`.
 
 ### Examples using `defaults`
 
-**Enable PAC stripping:**
+To enable PAC stripping, run:
+
 ```bash
 defaults write /opt/pluginplayground/current.options disablePAC -bool true
 ```
 
-**Turn on legacy Ammonia tweaks:**
+To turn on legacy Ammonia tweaks, run:
+
 ```bash
 defaults write /opt/pluginplayground/current.options useLegacyAmmonia -bool true
 ```
 
-**Pause injection:**
+To pause injection, run:
+
 ```bash
 defaults write /opt/pluginplayground/current.options pauseInjection -bool true
 ```
 
-**Enable a specific tweak:**
+To enable a specific tweak, run:
+
 ```bash
 defaults write /opt/pluginplayground/current.options enabledTweaks -array "MyTweak.dylib"
 ```
 
-**Enable multiple tweaks:**
+To enable multiple tweaks, list them all in one array:
+
 ```bash
 defaults write /opt/pluginplayground/current.options enabledTweaks -array "TweakA.dylib" "TweakB.dylib"
 ```
 
-**Add a tweak to the existing enabled list:**
+To add a tweak to the existing enabled list without overwriting it, use `-array-add`:
+
 ```bash
 defaults write /opt/pluginplayground/current.options enabledTweaks -array-add "NewTweak.dylib"
 ```
 
-**Read the current configuration:**
+To read the current configuration, run:
+
 ```bash
 defaults read /opt/pluginplayground/current.options
 ```

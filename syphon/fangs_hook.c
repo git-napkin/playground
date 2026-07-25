@@ -135,7 +135,10 @@ static bool macho64_has_sea_blob(int fd) {
         if (cmd_start == (off_t)-1) return false;
         struct load_command lc;
         if (read(fd, &lc, sizeof(lc)) != sizeof(lc)) return false;
-        if (lc.cmd == LC_SEGMENT_64) {
+        if (lc.cmdsize < sizeof(struct load_command))
+            return false;
+        if (lc.cmd == LC_SEGMENT_64 && lc.cmdsize >=
+            (sizeof(struct segment_command_64))) {
             lseek(fd, cmd_start, SEEK_SET);
             struct segment_command_64 seg;
             if (read(fd, &seg, sizeof(seg)) != sizeof(seg)) return false;
@@ -201,7 +204,11 @@ static void setup_options_watcher(void) {
     int fd = open("/opt/pluginplayground/current.options", O_EVTONLY);
     if (fd < 0) {
         syslog(LOG_WARNING,
-               "fangs_hook: cannot watch current.options: %s", strerror(errno));
+               "fangs_hook: cannot watch current.options: %s",
+               strerror(errno));
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC),
+                       dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
+                       ^{ setup_options_watcher(); });
         return;
     }
 
@@ -211,7 +218,6 @@ static void setup_options_watcher(void) {
         DISPATCH_VNODE_WRITE | DISPATCH_VNODE_EXTEND,
         dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0));
     if (!watcher) {
-        syslog(LOG_ERR, "fangs_hook: failed to create dispatch source");
         close(fd);
         return;
     }

@@ -158,7 +158,7 @@ void Controller::toggleTweak(const std::string& name) {
     if (it == m_tweakInfos.end()) return;
 
     if (it->disabled) {
-        // Enabling — check permissions first
+        // Check permissions before enabling
         std::string fullPath = tweaksDir() + "/" + name;
         struct stat st;
         if (stat(fullPath.c_str(), &st) != 0 || st.st_uid != 0 ||

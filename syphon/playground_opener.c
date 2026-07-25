@@ -1,4 +1,3 @@
-#include "playground_opener.h"
 #include "tweak_utils.h"
 #include <CoreFoundation/CoreFoundation.h>
 #include <dirent.h>
@@ -196,7 +195,12 @@ static void setup_reload_handler(void) {
 
 static void setup_options_watcher(void) {
     int fd = open("/opt/pluginplayground/current.options", O_EVTONLY);
-    if (fd < 0) return;
+    if (fd < 0) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC),
+                       dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
+                       ^{ setup_options_watcher(); });
+        return;
+    }
 
     dispatch_source_t source = dispatch_source_create(
         DISPATCH_SOURCE_TYPE_VNODE, fd,

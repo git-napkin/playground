@@ -25,23 +25,36 @@ static bool is_arm64e_subtype(uint32_t cpusubtype) {
     return (cpusubtype & CPU_SUBTYPE_ARM64_MASK) == CPU_SUBTYPE_ARM64E;
 }
 
+#define DEPACIFY_MAX_DEPTH 8
+
+static void depacify_binary_depth(uint8_t *d, size_t s, int depth);
+
 static void depacify_binary(uint8_t *d, size_t s) {
+    depacify_binary_depth(d, s, 0);
+}
+
+static void depacify_binary_depth(uint8_t *d, size_t s, int depth) {
+    if (depth > DEPACIFY_MAX_DEPTH || s < 4) return;
     uint32_t m = *(uint32_t *)d;
     if (m == MH_MAGIC_64) {
+        if (s < sizeof(struct mach_header_64)) return;
         struct mach_header_64 *h = (struct mach_header_64 *)d;
         if (h->cputype == CPU_TYPE_ARM64 && is_arm64e_subtype(h->cpusubtype))
             h->cpusubtype = 0;
     } else if (m == FAT_MAGIC || m == FAT_CIGAM) {
+        if (s < sizeof(struct fat_header)) return;
         bool swap = (m == FAT_CIGAM);
         struct fat_header *fh = (struct fat_header *)d;
         uint32_t n = swap ? __builtin_bswap32(fh->nfat_arch) : fh->nfat_arch;
+        if (s < sizeof(struct fat_header) + (size_t)n * sizeof(struct fat_arch))
+            return;
         struct fat_arch *as = (struct fat_arch *)(d + sizeof(*fh));
         for (uint32_t i = 0; i < n; i++) {
             uint32_t off = swap ? __builtin_bswap32(as[i].offset) : as[i].offset;
             uint32_t t = swap ? __builtin_bswap32(as[i].cputype) : as[i].cputype;
             uint32_t sbt = swap ? __builtin_bswap32(as[i].cpusubtype) : as[i].cpusubtype;
-            if (t == CPU_TYPE_ARM64 && is_arm64e_subtype(sbt)) {
-                depacify_binary((uint8_t *)d + off, s - off);
+            if (off < s && t == CPU_TYPE_ARM64 && is_arm64e_subtype(sbt)) {
+                depacify_binary_depth((uint8_t *)d + off, s - off, depth + 1);
                 as[i].cpusubtype = swap ? __builtin_bswap32(0) : 0;
             }
         }
@@ -51,8 +64,11 @@ static void depacify_binary(uint8_t *d, size_t s) {
 static bool strip_code_signature_thin(uint8_t *data, size_t size) {
     if (*(uint32_t *)data != MH_MAGIC_64)
         return true;
+    if (size < sizeof(struct mach_header_64))
+        return false;
 
     struct mach_header_64 *header = (struct mach_header_64 *)data;
+    uint8_t *end = data + size;
     uint8_t *src = (uint8_t *)(data + sizeof(*header));
     uint8_t *dst = src;
     uint32_t new_ncmds = 0;
@@ -60,8 +76,12 @@ static bool strip_code_signature_thin(uint8_t *data, size_t size) {
     uint32_t freed = 0;
 
     for (uint32_t i = 0; i < header->ncmds; i++) {
+        if ((size_t)(end - src) < sizeof(struct load_command))
+            return false;
         struct load_command *lc = (struct load_command *)src;
         uint32_t cmdsize = lc->cmdsize;
+        if (cmdsize < sizeof(struct load_command) || (size_t)(end - src) < cmdsize)
+            return false;
 
         if (lc->cmd == LC_CODE_SIGNATURE) {
             freed += cmdsize;
@@ -81,7 +101,6 @@ static bool strip_code_signature_thin(uint8_t *data, size_t size) {
         header->sizeofcmds = new_sizeofcmds;
     }
 
-    (void)size;
     return true;
 }
 

@@ -1,81 +1,145 @@
-# Plugin Playground — Agent Guide
+# AGENTS.md — Plugin Playground
+
+Runtime tweak system for macOS Apple Silicon. CMake build producing dylib injectors + a Slint configurator GUI.
+
+## Platform requirements
+
+- **macOS Apple Silicon (arm64e)** only.
+- **SIP must be partially disabled**: `csrutil enable --without debug`. Required to attach to launchd (PID 1) and set hardware breakpoints. Full off is not needed.
+- Xcode Command Line Tools (`xcode-select --install`), CMake 3.16+, git.
 
 ## Build
 
-```sh
-./setup_frida.sh              # download Frida-Gum devkit (auto-if missing)
-sh ./install.sh                # full build → PluginPlayground-1.0.0.pkg
-sudo installer -pkg "PluginPlayground-1.0.0.pkg" -target /
-```
-
-Manual build (without installer):
-```sh
-cmake -S . -B .build -DCMAKE_BUILD_TYPE=Release [-DBUILD_CONFIGURATOR=OFF]
-cmake --build .build
-```
-
-Quick rebuild of just the test tweak:
-```sh
-make -C testing    # builds testing/testing.dylib (arm64 bundle)
-```
-
-Nix: `nix build` (produces arm64-only binaries, requires PAC-stripping toggle).
-
-## Architecture
-
-- `libfangs_hook.dylib` — Frida-Gum hook injected into launchd via shellcode. Intercepts `posix_spawn`/`posix_spawnp` to inject the tweak loader into child UI processes.
-- `libplayground_opener.dylib` — per-process tweak loader. Injected via `DYLD_INSERT_LIBRARIES` by fangs_hook. Loads tweaks from `/opt/pluginplayground/tweaks/`.
-- `grant` — launchd shellcode injector. Runs as `com.pluginplayground.grant` LaunchDaemon. Uses `task_for_pid`, `mach_vm_allocate`, PAC-authenticated thread creation.
-- `configurator` — Slint (Rust) GUI in `/Applications/Plugin Playground.app`. Optional: `-DBUILD_CONFIGURATOR=OFF`.
-
-## System requirements
-
-- macOS Apple Silicon (arm64)
-- SIP partially disabled: `csrutil enable --without debug`
-- Default ABI is arm64e. Toggle "Disable arm64e (PAC)" in configurator if building without native arm64e support.
-- Xcode CLT, CMake 3.16+, git
-
-## Config (`/opt/pluginplayground/current.options`)
-
-XML plist. Modify via `defaults` or `plutil`:
+Primary path (produces `PluginPlayground-1.0.0.pkg`):
 
 ```sh
-defaults write /opt/pluginplayground/current.options disablePAC -bool true
-defaults write /opt/pluginplayground/current.options enabledTweaks -array "MyTweak.dylib"
-defaults read /opt/pluginplayground/current.options
+sh ./install.sh                 # auto-runs setup_frida.sh if fridagum.dylib is missing
 ```
 
-Keys: `disablePAC`, `useLegacyAmmonia`, `pauseInjection`, `enabledTweaks`
+CI-style build (no configurator, no packaging):
 
-## Entitlements
+```sh
+cmake -S . -B Build -DCMAKE_BUILD_TYPE=Release -DBUILD_CONFIGURATOR=OFF
+cmake --build Build -j8
+```
 
-`Master.entitlements` enables `task_for_pid-allow`, `com.apple.system-task-ports`, `com.apple.private.thread-set-state`, `get-task-allow`, `platform-application`. All binaries are codesigned with this file (ad-hoc by default, override with `-DCODESIGN_IDENTITY=...`).
+Frida-Gum prerequisite (fetches devkit + builds `fridagum.dylib` + `libfrida-gum-arm64e-arm64.a`):
+
+```sh
+sh ./setup_frida.sh
+```
+
+`install.sh` calls this automatically if `fridagum.dylib` is absent, but CI runs it explicitly as a separate step.
+
+### CMake options (all cache variables)
+
+| Option | Default | Notes |
+|---|---|---|
+| `BUILD_ARM64E` | `ON` | arm64e vs arm64. Off → plain arm64 (requires `disablePAC` toggle at runtime). |
+| `BUILD_CONFIGURATOR` | `ON` | GUI app. Requires Slint via FetchContent (first build downloads from GitHub). |
+| `BUILD_TESTS` | `ON` | CTest unit tests. |
+| `CODESIGN_IDENTITY` | `-` | Ad-hoc by default. Uses `Master.entitlements`. |
+| `INSTALL_PREFIX` | `/opt/pluginplayground` | Staging/install prefix. |
+
+Debug builds (`-DCMAKE_BUILD_TYPE=Debug`) auto-enable AddressSanitizer and clang-tidy (if available).
+
+### Nix (optional, reproducible)
+
+```sh
+nix build          # builds the package
+nix develop        # dev shell with clang-tools, cargo, rustc
+```
+
+The Nix build produces **arm64** (not arm64e). Toggle **Disable arm64e (PAC)** in the Configurator so injection works. Native arm64e requires `sudo nvram boot-args="-arm64e_preview_abi"` + reboot (set from Recovery Mode with SIP adjusted).
 
 ## Testing
 
+Two tiers — don't conflate them.
+
+### Unit tests (CTest)
+
+Run from any build directory with `BUILD_TESTS=ON`:
+
 ```sh
-# requires installed system (sudo ./install.sh)
-./testing.sh
+ctest --test-dir Build --output-on-failure
+# or directly:
+./Build/test_envbuf
+./Build/test_tweak_utils
 ```
 
-Launches test tweak via SIGUSR1 to a whitelisted process (Terminal/Finder/Dock/Safari). Results in `~/pluginplayground_test_results.txt`. CI does NOT run tests — they need SIP-off + launchd injection.
+`test_envbuf` covers `syphon/envbuf.c`; `test_tweak_utils` covers `syphon/tweak_utils.c`. No services or install required.
 
-## Source layout
+### Capability tests (integration, requires installed system)
 
-| Path | Purpose |
-|------|---------|
-| `syphon/` | Core C library: fangs_hook, playground_opener, envbuf, exe, options_loader, tweak_utils |
-| `grant/` | main.m — launchd shellcode injector (ObjC, ARC) |
-| `configurator/` | Slint GUI: main.cpp, controller, options, tweaks |
-| `testing/` | Test tweak dylib + Makefile |
-| `docs/` | Markdown docs for each subsystem |
-| `installer/` | Distribution.xml + HTML resources for .pkg |
-| `setup_frida.sh` | Downloads Frida 17.9.11, builds universal fat lib + dylib |
+```sh
+sh ./testing.sh
+```
+
+This is **not** a unit test. It:
+1. Verifies the install at `/opt/pluginplayground` (binaries, `current.options`, grant LaunchDaemon loaded).
+2. Builds `testing/testing.dylib` via `make -C testing/`.
+3. Installs the tweak + whitelist + options into `/opt/pluginplayground/tweaks/` (root-owned).
+4. Adds `testing.dylib` to `enabledTweaks` in `current.options`.
+5. Sends `SIGUSR1` to the first whitelisted process (Terminal, Finder, Dock, Safari) that has `libplayground_opener` loaded.
+6. Waits up to 30s for `$HOME/pluginplayground_test_results.txt`.
+
+**Prerequisites**: playground installed (`sudo ./install.sh`), grant daemon running, and a whitelisted app launched (e.g. open Terminal). If no target is found, launch one and re-run. Cleanup (tweak removal, options restore) runs automatically via trap.
+
+## Architecture
+
+Injection chain (all required, no opt-out):
+
+```
+grant (LaunchDaemon, boot)
+  → task_for_pid(1) + mach_vm shellcode
+  → dlopen(libfangs_hook.dylib) inside launchd
+    → Frida-Gum posix_spawn interceptor
+    → injects DYLD_INSERT_LIBRARIES=libplayground_opener.dylib into UI processes
+      → loads enabled .dylib tweaks from /opt/pluginplayground/tweaks/
+```
+
+- `syphon/exe.c` — PAC stripping: reads `disablePAC` from `current.options`, copies `.app` bundles to `/tmp/RuntimeApplications/`, zeroes arm64e cpusubtype, removes `LC_CODE_SIGNATURE`, ad-hoc re-signs.
+- `syphon/options_loader.c` — live-reloads `current.options` via dispatch VNODE watcher.
+- `syphon/tweak_utils.c` — whitelist/blacklist matching, path-traversal guards, tweak loading.
+- `configurator/` — Slint GUI (`configurator.slint` + `controller.cpp`/`dmanager.cpp`/`options.cpp`/`tweaks.cpp`).
+
+## Install layout
+
+```
+/opt/pluginplayground/
+  bin/grant                      # launchd injector (LaunchDaemon: com.pluginplayground.grant)
+  lib/libfangs_hook.dylib        # Frida-Gum posix_spawn hook (in launchd)
+  lib/libplayground_opener.dylib # per-process tweak loader
+  lib/fridagum.dylib             # Frida-Gum runtime (build prerequisite)
+  tweaks/*.dylib                 # tweaks + .whitelist/.blacklist/.options sidecars
+  current.options                # plist config (chmod 666 after GUI creates it)
+  ammonia.blacklist              # process blacklist for fangs_hook
+/Applications/Plugin Playground.app   # configurator GUI
+```
+
+## Configuration (`current.options` plist)
+
+Managed via `defaults`/`plutil` (no custom CLI):
+
+```sh
+defaults write /opt/pluginplayground/current.options disablePAC -bool true
+defaults write /opt/pluginplayground/current.options enabledTweaks -array-add "MyTweak.dylib"
+defaults read /opt/pluginplayground/current.options
+```
+
+First write needs `sudo` (file created by GUI with `chmod 666`). Keys: `disablePAC`, `useLegacyAmmonia`, `pauseInjection` (bools); `enabledTweaks` (array of filenames). Options reload live — no restart needed.
 
 ## Gotchas
 
-- `fridagum.dylib` is a universal arm64e+arm64 fat dylib built from static libs via `lipo`.
-- The `configurator` target fetches Slint v1.16.1 via `FetchContent` (pulls Rust toolchain into build). Link-cache managed in `.build-cargo/`.
-- `grant/main.m` has hardcoded ARM64e shellcode with offsets tuned for arm64e ABI (`ptrauth` instructions).
-- Install path `/opt/pluginplayground/` is hardcoded throughout (`SUPPORT_PATH`).
-- Uninstall: `./uninstall.sh` (re-elevates via sudo). Reboot recommended after.
+- **arm64e vs arm64**: Nix and CI builds produce arm64. If not running native arm64e, set `disablePAC=true` (or toggle in Configurator). Native arm64e needs the `boot-args` nvram flag.
+- **Slint FetchContent**: first `BUILD_CONFIGURATOR=ON` build downloads Slint v1.16.1 from GitHub. No network → set `FETCHCONTENT_SOURCE_DIR_SLINT` or use Nix.
+- **Build dirs**: `.build/`, `.build-cargo/`, `Build/` are gitignored. The CMake build symlinks `$BUILD_DIR/cargo` → `.build-cargo` for Rust dependency caching.
+- **Tweak compilation**: tweaks are arm64 bundles (`-bundle -undefined dynamic_lookup`). See `testing/Makefile` for the canonical flags.
+- **Legacy Ammonia**: `useLegacyAmmonia=true` loads from `/private/var/ammonia/core/tweaks/`. Disable/remove the Ammonia daemon first to avoid conflicts.
+- **Uninstall**: `./uninstall.sh` (re-elevates via sudo). Reboot recommended to clear injected code.
+
+## Repo conventions
+
+- Branches: `master` (main), `backup`. PRs target `master`.
+- CI (`.github/workflows/build.yml`): builds on `macos-latest`, runs `setup_frida.sh`, builds with `BUILD_CONFIGURATOR=OFF`, verifies `libfangs_hook.dylib` / `libplayground_opener.dylib` / `grant` exist.
+- Docs live in `docs/` (ammonia, compilation, configurator, defaults, fangs, grant, pac_stripping).

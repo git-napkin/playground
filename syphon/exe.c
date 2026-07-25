@@ -9,13 +9,25 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+static char *find_bundle_ext(char *path) {
+    char *last = NULL;
+    char *dot = strstr(path, ".app");
+    while (dot) {
+        char c = dot[4];
+        if (c == '/' || c == '\0')
+            last = dot;
+        dot = strstr(dot + 4, ".app");
+    }
+    return last;
+}
+
 char *getready_process(const char *path) {
     if (!path_is_bundle(path))
         return strdup(path);
 
     char bundle_root[PATH_MAX];
     snprintf(bundle_root, sizeof(bundle_root), "%s", path);
-    char *app_ext = strstr(bundle_root, ".app");
+    char *app_ext = find_bundle_ext(bundle_root);
     if (app_ext)
         app_ext[4] = '\0';
 
@@ -56,13 +68,13 @@ char *getready_process(const char *path) {
 
     log_info("[bootstrap] depacifying executable: %s", bundle_exec_tmp);
     if (!depacify_file_in_place(bundle_exec_tmp)) {
-        log_error("Warning: failed to depacify bundle executable");
+        log_error("[bootstrap] failed to depacify bundle executable");
         return strdup(bundle_exec_tmp);
     }
 
     log_info("[bootstrap] resigning bundle: %s", dst_bundle_path);
     if (!resign_bundle(dst_bundle_path))
-        log_error("Warning: failed to resign bundle, continuing anyway");
+        log_error("[bootstrap] failed to resign bundle, continuing anyway");
 
     log_info("[bootstrap] using depacified bundle");
     return strdup(bundle_exec_tmp);

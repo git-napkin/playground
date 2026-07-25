@@ -45,9 +45,8 @@ json.dump(d, sys.stdout)
 
 trap cleanup EXIT INT TERM
 
-echo "============================================"
-echo "  Plugin Playground — Capability Test Suite"
-echo "============================================"
+echo ""
+echo "Plugin Playground capability test suite"
 echo ""
 
 echo "1) Checking Plugin Playground installation..."
@@ -151,9 +150,8 @@ passed=$(grep -c '\[OK\]' "$RESULTS" 2>/dev/null || echo 0)
 failed=$(grep -c "FAILED" "$RESULTS" 2>/dev/null || echo 0)
 
 echo ""
-echo "============================================"
 echo "  PASSED: $passed   FAILED: $failed   TOTAL: $((passed + failed))"
-echo "============================================"
+echo ""
 
 if [ "$failed" -ne 0 ]; then
     exit 1

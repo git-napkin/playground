@@ -128,12 +128,9 @@ int main(int argc, const char *argv[]) {
     }
 
     uint64_t pcfmt_address =
-        (uint64_t)ptrauth_strip(
-            dlsym(RTLD_DEFAULT, "pthread_create_from_mach_thread"),
-            ptrauth_key_function_pointer);
+        (uint64_t)dlsym(RTLD_DEFAULT, "pthread_create_from_mach_thread");
     uint64_t dlopen_address =
-        (uint64_t)ptrauth_strip(dlsym(RTLD_DEFAULT, "dlopen"),
-                                ptrauth_key_function_pointer);
+        (uint64_t)dlsym(RTLD_DEFAULT, "dlopen");
     if (pcfmt_address == 0 || dlopen_address == 0) {
         syslog(LOG_ERR,
                "grant: could not resolve pthread_create_from_mach_thread "
@@ -232,9 +229,9 @@ int main(int argc, const char *argv[]) {
         }
     }
 
-    usleep(10000);
+    usleep(50000);
 
-    for (int i = 0; i < 10; ++i) {
+    for (int i = 0; i < 100; ++i) {
         kr = thread_get_state(thread, thread_flavor,
                               (thread_state_t)&thread_state,
                               &thread_flavor_count);

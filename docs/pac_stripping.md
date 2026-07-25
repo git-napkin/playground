@@ -1,4 +1,4 @@
-# PAC Stripping (`arm64e` Bypass)
+# PAC stripping (`arm64e` bypass)
 
 ## What it does
 
@@ -8,12 +8,12 @@ When Plugin Playground injects custom tweaks (`.dylib` files) into a system proc
 
 ## How it works
 
-PAC stripping is implemented in `syphon/exe.c` (the "Depacify" engine):
+PAC stripping is implemented in `syphon/exe.c`:
 
 1. In `fangs_hook` (loaded inside launchd), the `disablePAC` option is read from `/opt/pluginplayground/current.options` on startup.
 2. On each `posix_spawn`/`posix_spawnp` interception, if `disablePAC` is true, `getready_process()` is called with the target path.
 3. If the target is an `.app` bundle, it is copied to `/tmp/RuntimeApplications/` to avoid modifying the original.
-4. The Mach-O header is scanned: if `cpusubtype` indicates `arm64e` (`0x2`), it is zeroed to `0` (plain `arm64`). FAT binaries are handled recursively for each slice.
+4. The Mach-O header is scanned. If `cpusubtype` indicates `arm64e` (`0x2`), it is zeroed to `0` (plain `arm64`). FAT binaries are handled recursively for each slice.
 5. The `LC_CODE_SIGNATURE` load command is removed (invalidated by the header change).
 6. The executable is re-signed with ad-hoc SHA-256 via `SecCodeSignerCreate`.
 7. `fangs_hook` spawns the depacified copy instead of the original.
