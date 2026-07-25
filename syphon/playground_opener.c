@@ -5,6 +5,7 @@
 #include <dispatch/dispatch.h>
 #include <dlfcn.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -99,10 +100,9 @@ static void try_load_tweak(const char *dir, const char *d_name,
         return;
     }
 
-    char disabled_path[PATH_MAX];
-    snprintf(disabled_path, sizeof(disabled_path), "%s.disabled", full_path);
-    if (access(disabled_path, F_OK) == 0) {
-        syslog(LOG_INFO, "opener: %s is disabled, skipping", d_name);
+    if (!is_tweak_enabled(d_name)) {
+        syslog(LOG_INFO, "opener: %s not in enabled tweaks list, skipping",
+               d_name);
         return;
     }
 
@@ -143,6 +143,8 @@ static void try_load_tweak(const char *dir, const char *d_name,
 }
 
 static void scan_tweaks(const char *subdir) {
+    clear_tweak_enabled_cache();
+
     char *exe_path = get_exe_path();
     if (!exe_path) {
         syslog(LOG_ERR, "opener: cannot resolve executable path");
@@ -187,6 +189,32 @@ static void setup_reload_handler(void) {
     dispatch_resume(source);
 }
 
+static void setup_options_watcher(void) {
+    int fd = open("/opt/pluginplayground/current.options", O_EVTONLY);
+    if (fd < 0) return;
+
+    dispatch_source_t source = dispatch_source_create(
+        DISPATCH_SOURCE_TYPE_VNODE, fd,
+        DISPATCH_VNODE_WRITE | DISPATCH_VNODE_EXTEND,
+        dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0));
+    if (!source) {
+        close(fd);
+        return;
+    }
+
+    dispatch_source_set_event_handler(source, ^{
+      syslog(LOG_INFO, "opener: options changed, reloading tweaks");
+      clear_tweak_enabled_cache();
+      scan_tweaks(NULL);
+    });
+
+    dispatch_source_set_cancel_handler(source, ^{
+      close(fd);
+    });
+
+    dispatch_resume(source);
+}
+
 __attribute__((constructor)) static void opener_init(void) {
     openlog("playground_opener", LOG_PID | LOG_NDELAY, LOG_DAEMON);
 
@@ -217,4 +245,5 @@ __attribute__((constructor)) static void opener_init(void) {
 
     scan_tweaks(NULL);
     setup_reload_handler();
+    setup_options_watcher();
 }

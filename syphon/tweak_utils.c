@@ -171,7 +171,7 @@ bool should_load_tweak(const char *dir, const char *name, const char *exe) {
     if (access(bl, F_OK) == 0)
         return !check_list_match(bl, exe);
 
-    return false;
+    return true;
 }
 
 char *get_exe_path(void) {
@@ -181,6 +181,89 @@ char *get_exe_path(void) {
     if (!path) return NULL;
     _NSGetExecutablePath(path, &bufsize);
     return path;
+}
+
+static char **s_enabled_cache = NULL;
+static int s_enabled_cache_count = 0;
+static bool s_enabled_cache_loaded = false;
+
+static void load_enabled_cache(void) {
+    const char *path = "/opt/pluginplayground/current.options";
+    FILE *f = fopen(path, "rb");
+    if (!f) return;
+
+    fseek(f, 0, SEEK_END);
+    long len = ftell(f);
+    if (len < 0) { fclose(f); return; }
+    fseek(f, 0, SEEK_SET);
+
+    char *buf = malloc((size_t)len);
+    if (!buf) { fclose(f); return; }
+    if (!check_file_read(f, buf, (size_t)len)) {
+        free(buf);
+        fclose(f);
+        return;
+    }
+    fclose(f);
+
+    CFDataRef cfData = CFDataCreateWithBytesNoCopy(
+        kCFAllocatorDefault, (const UInt8 *)buf, (CFIndex)len, kCFAllocatorNull);
+    if (!cfData) { free(buf); return; }
+
+    CFPropertyListRef plist = CFPropertyListCreateWithData(
+        kCFAllocatorDefault, cfData, kCFPropertyListImmutable, NULL, NULL);
+    CFRelease(cfData);
+    free(buf);
+
+    if (!plist || CFGetTypeID(plist) != CFDictionaryGetTypeID()) {
+        if (plist) CFRelease(plist);
+        return;
+    }
+
+    CFDictionaryRef dict = (CFDictionaryRef)plist;
+    CFArrayRef arr = (CFArrayRef)CFDictionaryGetValue(dict, CFSTR("enabledTweaks"));
+    if (arr && CFGetTypeID(arr) == CFArrayGetTypeID()) {
+        CFIndex count = CFArrayGetCount(arr);
+        for (CFIndex i = 0; i < count; i++) {
+            CFStringRef s = (CFStringRef)CFArrayGetValueAtIndex(arr, i);
+            if (s && CFGetTypeID(s) == CFStringGetTypeID()) {
+                char name[PATH_MAX];
+                if (CFStringGetCString(s, name, sizeof(name), kCFStringEncodingUTF8)) {
+                    char **tmp = realloc(s_enabled_cache, (size_t)(s_enabled_cache_count + 1) * sizeof(char *));
+                    if (tmp) {
+                        s_enabled_cache = tmp;
+                        s_enabled_cache[s_enabled_cache_count] = strdup(name);
+                        if (s_enabled_cache[s_enabled_cache_count])
+                            s_enabled_cache_count++;
+                    }
+                }
+            }
+        }
+    }
+
+    CFRelease(dict);
+}
+
+bool is_tweak_enabled(const char *name) {
+    if (!name || !*name) return false;
+    if (!s_enabled_cache_loaded) {
+        load_enabled_cache();
+        s_enabled_cache_loaded = true;
+    }
+    for (int i = 0; i < s_enabled_cache_count; i++) {
+        if (strcmp(s_enabled_cache[i], name) == 0)
+            return true;
+    }
+    return false;
+}
+
+void clear_tweak_enabled_cache(void) {
+    for (int i = 0; i < s_enabled_cache_count; i++)
+        free(s_enabled_cache[i]);
+    free(s_enabled_cache);
+    s_enabled_cache = NULL;
+    s_enabled_cache_count = 0;
+    s_enabled_cache_loaded = false;
 }
 
 bool check_dylib_options(const char *dir, const char *name, const char *exe) {

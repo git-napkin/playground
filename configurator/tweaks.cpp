@@ -36,40 +36,93 @@ static bool endsWith(const std::string &s, const std::string &suffix) {
 }
 
 std::vector<TweakData> scanTweaks() {
+    Options opts = loadOptions();
     std::vector<TweakData> result;
+
+    // Migration from legacy .dylib.disabled files
+    bool needsMigration = false;
+    {
+        DIR *d = opendir(tweaksDir().c_str());
+        if (!d) return result;
+        struct dirent *e;
+        while ((e = readdir(d)) != nullptr) {
+            if (endsWith(std::string(e->d_name), ".dylib.disabled")) {
+                needsMigration = true;
+                break;
+            }
+        }
+        closedir(d);
+    }
+
+    if (needsMigration) {
+        // Build enabledTweaks from non-disabled .dylib files
+        DIR *d = opendir(tweaksDir().c_str());
+        if (d) {
+            struct dirent *e;
+            while ((e = readdir(d)) != nullptr) {
+                std::string name(e->d_name);
+                if (endsWith(name, ".dylib") && !endsWith(name, ".dylib.disabled")) {
+                    std::string disabledPath = tweaksDir() + "/" + name + ".disabled";
+                    if (access(disabledPath.c_str(), F_OK) != 0)
+                        opts.enabledTweaks.push_back(name);
+                }
+            }
+            closedir(d);
+        }
+        // Remove all .dylib.disabled files
+        DIR *d2 = opendir(tweaksDir().c_str());
+        if (d2) {
+            struct dirent *e;
+            while ((e = readdir(d2)) != nullptr) {
+                std::string name(e->d_name);
+                if (endsWith(name, ".dylib.disabled"))
+                    unlink((tweaksDir() + "/" + name).c_str());
+            }
+            closedir(d2);
+        }
+        saveOptions(opts);
+    }
+
+    // Normal scan: list .dylib files, cross-reference with enabledTweaks
     DIR *dir = opendir(tweaksDir().c_str());
     if (!dir) return result;
 
     struct dirent *entry;
     while ((entry = readdir(dir)) != nullptr) {
         std::string name(entry->d_name);
-
         if (endsWith(name, ".dylib") && !endsWith(name, ".dylib.disabled")) {
-            result.push_back({name, false});
-        } else if (endsWith(name, ".dylib.disabled")) {
-            std::string base = name.substr(0, name.size() - 9);
-            result.push_back({base, true});
+            bool enabled = std::find(opts.enabledTweaks.begin(), opts.enabledTweaks.end(), name) != opts.enabledTweaks.end();
+            result.push_back({name, !enabled});
         }
     }
     closedir(dir);
     return result;
 }
 
-bool toggleTweak(const std::string &name) {
-    std::string normal = tweakPath(name);
-    std::string disabled = tweakDisabledPath(name);
+static bool isTweakSafe(const std::string &path) {
+    struct stat st;
+    if (stat(path.c_str(), &st) != 0) return false;
+    if (st.st_uid != 0) return false;
+    if (st.st_mode & (S_IWGRP | S_IWOTH)) return false;
+    return true;
+}
 
-    FILE *f = fopen(normal.c_str(), "rb");
-    if (f) {
-        fclose(f);
-        return rename(normal.c_str(), disabled.c_str()) == 0;
+bool toggleTweak(const std::string &name) {
+    std::string base = name;
+    if (endsWith(base, ".disabled"))
+        base = base.substr(0, base.size() - 9);
+
+    Options opts = loadOptions();
+    auto it = std::find(opts.enabledTweaks.begin(), opts.enabledTweaks.end(), base);
+    if (it != opts.enabledTweaks.end()) {
+        opts.enabledTweaks.erase(it);
+    } else {
+        std::string fullPath = tweaksDir() + "/" + base;
+        if (!isTweakSafe(fullPath))
+            return false;
+        opts.enabledTweaks.push_back(base);
     }
-    f = fopen(disabled.c_str(), "rb");
-    if (f) {
-        fclose(f);
-        return rename(disabled.c_str(), normal.c_str()) == 0;
-    }
-    return false;
+    return saveOptions(opts);
 }
 
 static bool runCommand(const char *cmd, const char *const argv[]) {

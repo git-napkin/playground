@@ -16,3 +16,5 @@ bool check_list_match(const char *path, const char *exe);
 bool is_tweak_safe(const char *full_path);
 bool should_load_tweak(const char *dir, const char *name, const char *exe);
 char *get_exe_path(void);
+bool is_tweak_enabled(const char *name);
+void clear_tweak_enabled_cache(void);

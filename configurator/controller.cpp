@@ -28,7 +28,7 @@ void Controller::load() {
 }
 
 void Controller::save() {
-    Options opts;
+    Options opts = loadOptions();
     opts.useLegacyAmmonia = m_window.get_use_legacy_ammonia();
     opts.disablePAC = m_window.get_disable_pac();
     opts.pauseInjection = m_window.get_pause_injection();
@@ -155,6 +155,18 @@ void Controller::toggleTweak(const std::string& name) {
     auto it = std::find_if(m_tweakInfos.begin(), m_tweakInfos.end(),
         [&](const TweakData& t) { return t.name == name; });
     if (it == m_tweakInfos.end()) return;
+
+    if (it->disabled) {
+        // Enabling — check permissions first
+        std::string fullPath = tweaksDir() + "/" + name;
+        struct stat st;
+        if (stat(fullPath.c_str(), &st) != 0 || st.st_uid != 0 ||
+            (st.st_mode & (S_IWGRP | S_IWOTH))) {
+            m_window.set_status_message(
+                "Error: Tweak must be owned by root and not world-writable");
+            return;
+        }
+    }
 
     if (::toggleTweak(name)) {
         it->disabled = !it->disabled;

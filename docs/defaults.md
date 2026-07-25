@@ -7,11 +7,15 @@ The Plugin Playground Configurator saves your preferences in a standard macOS XM
 
 ## Available Keys
 
-The following boolean keys are supported:
+### Boolean Keys
 
 - `disablePAC`: Disables arm64e PAC signing for spawned processes. This is required if you are compiling without the native arm64e ABI.
 - `useLegacyAmmonia`: Uses the legacy tweak path (`/private/var/ammonia/core/tweaks/`) instead of the default `/opt/pluginplayground/tweaks/`.
 - `pauseInjection`: Globally pauses tweak injection for all processes.
+
+### Array Keys
+
+- `enabledTweaks`: Array of tweak filenames (e.g. `MyTweak.dylib`) that the user has explicitly enabled. Tweaks present in the directory but not listed here will not be loaded. Manage this list from the Configurator GUI or from the command line.
 
 ## Command-Line Usage
 
@@ -32,6 +36,21 @@ defaults write /opt/pluginplayground/current.options useLegacyAmmonia -bool true
 **Pause injection:**
 ```bash
 defaults write /opt/pluginplayground/current.options pauseInjection -bool true
+```
+
+**Enable a specific tweak:**
+```bash
+defaults write /opt/pluginplayground/current.options enabledTweaks -array "MyTweak.dylib"
+```
+
+**Enable multiple tweaks:**
+```bash
+defaults write /opt/pluginplayground/current.options enabledTweaks -array "TweakA.dylib" "TweakB.dylib"
+```
+
+**Add a tweak to the existing enabled list:**
+```bash
+defaults write /opt/pluginplayground/current.options enabledTweaks -array-add "NewTweak.dylib"
 ```
 
 **Read the current configuration:**

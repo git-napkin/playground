@@ -8,7 +8,7 @@
 #include <unistd.h>
 
 FangsOptions fangs_load_options(void) {
-    FangsOptions opts = {false, false, false};
+    FangsOptions opts = {false, false, false, NULL, 0};
     const char* path = "/opt/pluginplayground/current.options";
 
     FILE* f = fopen(path, "rb");
@@ -57,6 +57,27 @@ FangsOptions fangs_load_options(void) {
     if (val && CFGetTypeID(val) == CFBooleanGetTypeID())
         opts.pauseInjection = (bool)CFBooleanGetValue(val);
 
+    CFArrayRef enabledArr = (CFArrayRef)CFDictionaryGetValue(dict, CFSTR("enabledTweaks"));
+    if (enabledArr && CFGetTypeID(enabledArr) == CFArrayGetTypeID()) {
+        CFIndex count = CFArrayGetCount(enabledArr);
+        for (CFIndex i = 0; i < count; i++) {
+            CFStringRef s = (CFStringRef)CFArrayGetValueAtIndex(enabledArr, i);
+            if (s && CFGetTypeID(s) == CFStringGetTypeID()) {
+                char name[PATH_MAX];
+                if (CFStringGetCString(s, name, sizeof(name), kCFStringEncodingUTF8)) {
+                    char **tmp = realloc(opts.enabledTweaks,
+                        (size_t)(opts.enabledTweakCount + 1) * sizeof(char *));
+                    if (tmp) {
+                        opts.enabledTweaks = tmp;
+                        opts.enabledTweaks[opts.enabledTweakCount] = strdup(name);
+                        if (opts.enabledTweaks[opts.enabledTweakCount])
+                            opts.enabledTweakCount++;
+                    }
+                }
+            }
+        }
+    }
+
     CFRelease(dict);
     return opts;
 }
@@ -84,6 +105,9 @@ char* fangs_build_dyld_insert_libraries(bool useLegacyAmmonia, const char* path)
             continue;
 
         if (!should_load_tweak(dir, name, path))
+            continue;
+
+        if (!is_tweak_enabled(name))
             continue;
 
         if (!useLegacyAmmonia && !check_dylib_options(dir, name, path))

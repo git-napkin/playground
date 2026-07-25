@@ -63,25 +63,28 @@ sudo installer -pkg PluginPlayground-1.0.0.pkg -target /
 
 ## Configuration
 
-Boolean keys in `/opt/pluginplayground/current.options` (XML plist):
+Keys in `/opt/pluginplayground/current.options` (XML plist):
 
-- `disablePAC` — Strip PAC from spawned processes (WIP, not yet implemented)
-- `useLegacyAmmonia` — Load tweaks from `/private/var/ammonia/core/tweaks/`
-- `pauseInjection` — Globally pause tweak injection
+- `disablePAC` (bool) — Strip PAC from spawned processes (WIP, not yet implemented)
+- `useLegacyAmmonia` (bool) — Load tweaks from `/private/var/ammonia/core/tweaks/`
+- `pauseInjection` (bool) — Globally pause tweak injection
+- `enabledTweaks` (string array) — Tweaks the user has explicitly enabled. Only tweaks in this list are loaded (all others in the directory are ignored).
 
 CLI:
 ```sh
 defaults write /opt/pluginplayground/current.options disablePAC -bool true
+defaults write /opt/pluginplayground/current.options enabledTweaks -array "MyTweak.dylib"
 defaults read /opt/pluginplayground/current.options
 ```
 
 ## Tweak System
 
-A tweak is a `.dylib` in the tweaks dir. Per-tweak metadata files alongside it:
+A tweak is a `.dylib` in the tweaks dir. All tweaks must be manually enabled by the user (added to the `enabledTweaks` list in `current.options` via the Configurator GUI or `defaults` CLI). Tweaks in the directory that are not in the enabled list are ignored.
+
+Per-tweak metadata files alongside it:
 
 - `<name>.dylib.whitelist` — process names to load into (one per line)
 - `<name>.dylib.blacklist` — process names to skip
-- `<name>.dylib.disabled` — empty marker file disables the tweak
 - `<name>.dylib.options` — XML plist with keys:
   - `blacklistedApps` (string array) — skip these process names
   - `frameworkDependencies` (string array) — only load if target links to these frameworks

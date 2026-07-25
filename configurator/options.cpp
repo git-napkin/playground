@@ -10,6 +10,13 @@ static const char *optionsPath() {
     return "/opt/pluginplayground/current.options";
 }
 
+static std::string cfToStr(CFStringRef s) {
+    char buf[4096];
+    if (CFStringGetCString(s, buf, sizeof(buf), kCFStringEncodingUTF8))
+        return buf;
+    return {};
+}
+
 Options loadOptions() {
     CFDataRef data = fileRead(optionsPath());
     if (!data) return {};
@@ -37,6 +44,16 @@ Options loadOptions() {
     opts.disablePAC = getBool(CFSTR("disablePAC"), false);
     opts.pauseInjection = getBool(CFSTR("pauseInjection"), false);
 
+    CFArrayRef enabledArr = (CFArrayRef)CFDictionaryGetValue(dict, CFSTR("enabledTweaks"));
+    if (enabledArr && CFGetTypeID(enabledArr) == CFArrayGetTypeID()) {
+        CFIndex count = CFArrayGetCount(enabledArr);
+        for (CFIndex i = 0; i < count; i++) {
+            CFStringRef s = (CFStringRef)CFArrayGetValueAtIndex(enabledArr, i);
+            if (s && CFGetTypeID(s) == CFStringGetTypeID())
+                opts.enabledTweaks.push_back(cfToStr(s));
+        }
+    }
+
     CFRelease(dict);
     return opts;
 }
@@ -63,7 +80,7 @@ static bool fixPermissions() {
 
 bool saveOptions(const Options &opts) {
     CFMutableDictionaryRef dict = CFDictionaryCreateMutable(
-        kCFAllocatorDefault, 3,
+        kCFAllocatorDefault, 4,
         &kCFTypeDictionaryKeyCallBacks,
         &kCFTypeDictionaryValueCallBacks);
 
@@ -73,6 +90,17 @@ bool saveOptions(const Options &opts) {
         opts.disablePAC ? kCFBooleanTrue : kCFBooleanFalse);
     CFDictionarySetValue(dict, CFSTR("pauseInjection"),
         opts.pauseInjection ? kCFBooleanTrue : kCFBooleanFalse);
+
+    CFMutableArrayRef enabledArr = CFArrayCreateMutable(kCFAllocatorDefault, opts.enabledTweaks.size(), &kCFTypeArrayCallBacks);
+    for (const auto &t : opts.enabledTweaks) {
+        CFStringRef s = CFStringCreateWithCString(kCFAllocatorDefault, t.c_str(), kCFStringEncodingUTF8);
+        if (s) {
+            CFArrayAppendValue(enabledArr, s);
+            CFRelease(s);
+        }
+    }
+    CFDictionarySetValue(dict, CFSTR("enabledTweaks"), enabledArr);
+    CFRelease(enabledArr);
 
     CFDataRef data = CFPropertyListCreateData(
         kCFAllocatorDefault, dict, kCFPropertyListXMLFormat_v1_0, 0, nullptr);
