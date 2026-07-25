@@ -34,6 +34,9 @@ add_library(fangs_hook SHARED
     ${SYPHON_SOURCES}
 )
 target_include_directories(fangs_hook PRIVATE ${SYPHON_INCLUDE_PRIVATE})
+target_link_libraries(fangs_hook PRIVATE
+    "-framework CoreFoundation"
+)
 
 # ── libplayground_opener: per-process tweak loader ────────────────────────
 add_library(playground_opener SHARED
