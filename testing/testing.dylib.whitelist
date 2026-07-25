@@ -1,0 +1,35 @@
+# testing.dylib whitelist — load into standard UI processes for capability testing
+# Plugin Playground framework capability test suite
+# (one process name per line, full path or basename)
+Finder
+Dock
+SystemUIServer
+ControlCenter
+NotificationCenter
+WindowServer
+loginwindow
+cfprefsd
+trustd
+securityd
+opendirectoryd
+configd
+notifyd
+distnoted
+UserEventAgent
+rapportd
+sharingd
+WiFiAgent
+Bluetooth
+warmd
+coreauthd
+locationd
+displaypolicyd
+logd
+syslogd
+AppleSpell
+Terminal
+iTerm2
+Safari
+SafariBrowser
+WebKit
+pluginplayground_test
