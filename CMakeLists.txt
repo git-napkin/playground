@@ -4,10 +4,34 @@ project(pluginplayground C CXX OBJC)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-set(CMAKE_OSX_ARCHITECTURES "arm64e")
+
+option(BUILD_ARM64E "Build for arm64e architecture" ON)
+if(BUILD_ARM64E)
+  set(CMAKE_OSX_ARCHITECTURES "arm64e")
+else()
+  set(CMAKE_OSX_ARCHITECTURES "arm64")
+endif()
 
 set(CODESIGN_IDENTITY "-" CACHE STRING "Codesign identity (default: ad-hoc)")
 set(INSTALL_PREFIX "/opt/pluginplayground" CACHE PATH "Installation prefix")
+
+# ── Sanitisers (debug builds) ──────────────────────────────────────────────
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+  if(CMAKE_C_COMPILER_ID MATCHES "AppleClang|Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|Clang")
+    add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address)
+  endif()
+endif()
+
+# ── clang-tidy (if available) ──────────────────────────────────────────────
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+  find_program(CLANG_TIDY clang-tidy)
+  if(CLANG_TIDY)
+    set(CMAKE_C_CLANG_TIDY "${CLANG_TIDY}")
+    set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY}")
+    message(STATUS "clang-tidy enabled: ${CLANG_TIDY}")
+  endif()
+endif()
 
 function(syphon_codesign target)
   add_custom_command(TARGET ${target} POST_BUILD
@@ -18,7 +42,8 @@ function(syphon_codesign target)
     )
 endfunction()
 
-set(SYPHON_SOURCES
+# ── Shared syphon object library (compiled once for fangs_hook targets) ──
+add_library(syphon_obj OBJECT
     syphon/envbuf.c
     syphon/tweak_utils.c
 )
@@ -28,12 +53,16 @@ set(SYPHON_INCLUDE_PRIVATE
     $<INSTALL_INTERFACE:include/syphon>
 )
 
+target_include_directories(syphon_obj PRIVATE ${SYPHON_INCLUDE_PRIVATE})
+
 # ── libfangs_hook: Frida-Gum posix_spawn hook (injected into launchd) ────
 add_library(fangs_hook SHARED
     syphon/fangs_hook.c
     syphon/exe.c
+    syphon/pac_utils.c
+    syphon/bundle_copy.c
     syphon/options_loader.c
-    ${SYPHON_SOURCES}
+    $<TARGET_OBJECTS:syphon_obj>
 )
 target_include_directories(fangs_hook PRIVATE ${SYPHON_INCLUDE_PRIVATE})
 target_link_libraries(fangs_hook PRIVATE
@@ -44,7 +73,7 @@ target_link_libraries(fangs_hook PRIVATE
 # ── libplayground_opener: per-process tweak loader ────────────────────────
 add_library(playground_opener SHARED
     syphon/playground_opener.c
-    ${SYPHON_SOURCES}
+    $<TARGET_OBJECTS:syphon_obj>
 )
 target_include_directories(playground_opener PRIVATE ${SYPHON_INCLUDE_PRIVATE})
 target_link_libraries(playground_opener PRIVATE
@@ -53,7 +82,6 @@ target_link_libraries(playground_opener PRIVATE
 )
 
 # ── Privilege grant tool (launchd shellcode injector) ─────────────────────
-
 add_executable(grant grant/main.m)
 target_include_directories(grant PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/grant")
 target_link_libraries(grant PRIVATE
@@ -61,6 +89,22 @@ target_link_libraries(grant PRIVATE
 )
 target_compile_options(grant PRIVATE -fobjc-arc)
 syphon_codesign(grant)
+
+# ── Unit tests ─────────────────────────────────────────────────────────────
+option(BUILD_TESTS "Build unit tests" ON)
+if(BUILD_TESTS)
+  enable_testing()
+
+  add_executable(test_envbuf test/test_envbuf.c syphon/envbuf.c)
+  add_test(NAME envbuf COMMAND test_envbuf)
+
+  add_executable(test_tweak_utils test/test_tweak_utils.c
+      $<TARGET_OBJECTS:syphon_obj>
+  )
+  target_include_directories(test_tweak_utils PRIVATE ${SYPHON_INCLUDE_PRIVATE})
+  target_link_libraries(test_tweak_utils PRIVATE "-framework CoreFoundation")
+  add_test(NAME tweak_utils COMMAND test_tweak_utils)
+endif()
 
 # ── Configurator ──────────────────────────────────────────────────────────
 

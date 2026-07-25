@@ -1,4 +1,5 @@
 .build/
+.build-*/
 .build-cargo/
 Build/
 compile_commands.json

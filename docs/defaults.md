@@ -1,29 +1,28 @@
 # Configuration Defaults
 
-The Plugin Playground Configurator saves your preferences in a standard macOS XML Property List (plist) file. This allows you to configure the environment entirely without the GUI if you prefer or if you're writing automated scripts.
+The Configurator saves preferences in a standard macOS XML Property List (plist) file. Configure the environment from the terminal or scripts without opening the GUI.
 
-**Configuration File Path:**
-`/opt/pluginplayground/current.options`
+Configuration file: `/opt/pluginplayground/current.options`
 
-## Available Keys
+## Available keys
 
-### Boolean Keys
+### Boolean keys
 
-- `disablePAC`: Disables arm64e PAC signing for spawned processes. This is required if you are compiling without the native arm64e ABI.
-- `useLegacyAmmonia`: Uses the legacy tweak path (`/private/var/ammonia/core/tweaks/`) instead of the default `/opt/pluginplayground/tweaks/`.
-- `pauseInjection`: Globally pauses tweak injection for all processes.
+- `disablePAC`: Disables arm64e PAC signing for spawned processes. Required when compiling without native arm64e ABI.
+- `useLegacyAmmonia`: Uses the legacy tweak path (`/private/var/ammonia/core/tweaks/`) instead of `/opt/pluginplayground/tweaks/`.
+- `pauseInjection`: Pauses tweak injection for all processes.
 
-### Array Keys
+### Array keys
 
-- `enabledTweaks`: Array of tweak filenames (e.g. `MyTweak.dylib`) that the user has explicitly enabled. Tweaks present in the directory but not listed here will not be loaded. Manage this list from the Configurator GUI or from the command line.
+- `enabledTweaks`: Array of tweak filenames (e.g. `MyTweak.dylib`) that the user has enabled. Tweaks in the directory not listed here are skipped. Manage from the Configurator GUI or command line.
 
-## Command-Line Usage
+## Command-line usage
 
-Since the configuration is a standard plist file, you can modify it from the terminal using built-in macOS tools like `defaults` or `plutil`.
+Since the config is a standard plist, modify it with `defaults` or `plutil`.
 
 ### Examples using `defaults`
 
-**Enable PAC stripping (disable PAC):**
+**Enable PAC stripping:**
 ```bash
 defaults write /opt/pluginplayground/current.options disablePAC -bool true
 ```
@@ -59,4 +58,4 @@ defaults read /opt/pluginplayground/current.options
 ```
 
 > [!NOTE]
-> If the file does not exist yet, you may need to use `sudo defaults write ...` the very first time you create it. Once created by the Configurator GUI, it automatically makes the file writable by all users (`chmod 666`).
+> If the file does not exist yet, use `sudo defaults write ...` the first time. After the Configurator GUI creates it, the file is writable by all users (`chmod 666`).

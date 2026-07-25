@@ -3,18 +3,17 @@
 The build process is managed by install.sh and CMake.
 
 ## install.sh
-What it is: The primary build script.
-Role: Automates building components and packaging them into the final installer.
+
+The primary build script. Automates building components and packaging them into the final installer.
 
 ## CMakeLists.txt
-What it is: The project build configuration.
-Role: Specifies targets, fetches dependencies like Slint, and coordinates the compilation of grant, libfangs_hook.dylib, libplayground_opener.dylib, and the configurator.
 
-## Nix (Optional)
-What it is: A declarative build environment using flake.nix.
-Why it is: Provides a reproducible alternative to system tools.
-How it is used: Run `nix build` or use `nix develop` to build the project.
-Optional: Yes, this method is entirely optional. 
-Fun-fact: It can also be used to make a nixpkgs package of Plugin Playground available to all nix users. Eventually, `nix-darwin`, `home-manager` can utilize that package to provide easy configuration of Plugin Playground with nix options.
+The project build configuration. Specifies targets, fetches dependencies like Slint, and coordinates the compilation of grant, libfangs_hook.dylib, libplayground_opener.dylib, and the configurator.
 
-**Important Note for Apple Silicon:** Because the Nix build uses standard open-source toolchains and must compile both Rust (Slint) and C++ components without linker conflicts, it generates standard `arm64` binaries rather than Apple's native `arm64e` ABI. As a result, when using the Nix-compiled version of the Playground, you **must** toggle **Disable arm64e (PAC)** in the Configurator GUI to strip PAC signing from spawned processes, allowing injection to work flawlessly.
+## Nix (optional)
+
+A declarative build environment using flake.nix. Provides a reproducible alternative to system tools. Run `nix build` or use `nix develop` to build the project. Completely optional.
+
+It can also be wrapped into a nixpkgs package for `nix-darwin` and `home-manager` integration.
+
+**Important note for Apple Silicon:** The Nix build uses standard open-source toolchains and compiles both Rust (Slint) and C++ components without linker conflicts. It generates standard `arm64` binaries rather than Apple's native `arm64e` ABI. When using the Nix-compiled version, you must toggle **Disable arm64e (PAC)** in the Configurator so injection works.

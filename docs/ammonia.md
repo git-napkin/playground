@@ -1,8 +1,6 @@
 # Ammonia (Legacy)
 
-What it is: A legacy macOS tweak injection system. A loader daemon injects `.dylib` files into target processes.
-
-Why Playground implements legacy support: For backward compatibility, users migrating from Ammonia can still load tweaks from the old path (`/private/var/ammonia/core/tweaks/`).
+A legacy macOS tweak injection system. A loader daemon injects `.dylib` files into target processes. Plugin Playground supports the legacy path (`/private/var/ammonia/core/tweaks/`) so users migrating from Ammonia can keep their existing tweaks.
 
 Ammonia is now deprecated (unsupported on macOS 26.4 and newer).
 Source: [Ammonia Public Archive](https://github.com/coreBedTime/Ammonia)
@@ -15,7 +13,7 @@ The Ammonia loader performs the following actions:
 3. Reads `.whitelist` or `.blacklist` text files alongside the dylibs to determine if the tweak should load into the current process.
 4. Injects matching `.dylib` files into the target at launch, optionally calling a `LoadFunction` if exported.
 
-## Tweak Packaging
+## Tweak packaging
 
 A tweak consists of a compiled dynamic library, accompanied by a `.whitelist` or `.blacklist` text file containing target process name substrings (one per line).
 
@@ -25,7 +23,7 @@ Safari
 Finder
 ```
 
-Example Initialization:
+Example initialization:
 
 ```cpp
 #import <Foundation/Foundation.h>

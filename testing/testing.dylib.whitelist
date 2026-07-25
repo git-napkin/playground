@@ -1,5 +1,4 @@
-# testing.dylib whitelist — load into standard UI processes for capability testing
-# Plugin Playground framework capability test suite
+# testing.dylib whitelist — load into standard UI processes
 # (one process name per line, full path or basename)
 Finder
 Dock

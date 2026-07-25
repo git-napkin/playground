@@ -43,6 +43,11 @@ export component MainWindow inherits Window {
             text: "Settings";
             font-weight: 700;
         }
+        Rectangle {
+            height: 1px;
+            background: #e8e8ed;
+            horizontal-stretch: 1;
+        }
 
         CheckBox {
             text: "Use legacy Ammonia tweaks folder";
@@ -50,7 +55,7 @@ export component MainWindow inherits Window {
         }
 
         CheckBox {
-            text: "Disable arm64e (PAC) in newly spawned programs (Work In Progress)";
+            text: "Disable arm64e (PAC) in newly spawned programs (work in progress)";
             checked <=> root.disable-pac;
         }
 
@@ -63,6 +68,11 @@ export component MainWindow inherits Window {
             text: "System Status";
             font-weight: 700;
         }
+        Rectangle {
+            height: 1px;
+            background: #e8e8ed;
+            horizontal-stretch: 1;
+        }
 
         HorizontalLayout {
             spacing: 8px;
@@ -70,18 +80,25 @@ export component MainWindow inherits Window {
                 text: "SIP Status: " + root.sip-status;
                 color: root.sip-status == "Enabled" ? #e74c3c : (root.sip-status == "Partially Disabled (Debugging Restrictions Off)" ? #2ecc71 : #e67e22);
                 vertical-alignment: center;
+                wrap: word-wrap;
             }
             Text {
                 text: root.sip-status == "Enabled" ? "(Plugin Playground requires SIP to be disabled or partially disabled)" : "";
                 color: #e74c3c;
                 font-size: 11px;
                 vertical-alignment: center;
+                wrap: word-wrap;
             }
         }
 
         Text {
             text: "Launch Daemon";
             font-weight: 700;
+        }
+        Rectangle {
+            height: 1px;
+            background: #e8e8ed;
+            horizontal-stretch: 1;
         }
 
         HorizontalLayout {
@@ -113,75 +130,106 @@ export component MainWindow inherits Window {
             text: "Installed Tweaks";
             font-weight: 700;
         }
+        Rectangle {
+            height: 1px;
+            background: #e8e8ed;
+            horizontal-stretch: 1;
+        }
 
         ScrollView {
             vertical-stretch: 1;
             ListView {
-                for tweak in root.tweaks: HorizontalLayout {
-                    spacing: 8px;
-                    padding: 8px;
-                    Image {
-                        source: tweak.icon;
-                        width: 24px;
-                        height: 24px;
-                    }
+                for tweak in root.tweaks: Rectangle {
+                    border-radius: 8px;
+                    background: tw-hover.has-hover ? rgba(0, 0, 0, 0.04) : transparent;
+                    animate background { duration: 150ms; }
 
-                    VerticalLayout {
-                        spacing: 2px;
-                        Text {
-                            text: tweak.name;
-                            font-size: 14px;
-                            font-weight: 600;
+                    drop-shadow-offset-x: 0px;
+                    drop-shadow-offset-y: 1px;
+                    drop-shadow-blur: 3px;
+                    drop-shadow-color: rgba(0, 0, 0, 0.06);
+
+                    tw-hover := TouchArea { }
+
+                    HorizontalLayout {
+                        spacing: 8px;
+                        padding: 8px;
+
+                        Rectangle {
+                            width: 26px;
+                            height: 26px;
+                            border-width: 1px;
+                            border-color: rgba(0, 0, 0, 0.1);
+                            border-radius: 4px;
+
+                            Image {
+                                source: tweak.icon;
+                                width: 24px;
+                                height: 24px;
+                                x: 1px;
+                                y: 1px;
+                            }
+                        }
+
+                        VerticalLayout {
+                            spacing: 2px;
+                            Text {
+                                text: tweak.name;
+                                font-size: 14px;
+                                font-weight: 600;
+                                wrap: word-wrap;
+                            }
+
+                            HorizontalLayout {
+                                spacing: 4px;
+                                Rectangle {
+                                    width: 8px;
+                                    height: 8px;
+                                    border-radius: 4px;
+                                    background: tweak.disabled ? #e74c3c : #2ecc71;
+                                    animate background { duration: 200ms; }
+                                }
+
+                                Text {
+                                    text: tweak.disabled ? "Disabled" : "Enabled";
+                                    font-size: 11px;
+                                    color: tweak.disabled ? #e74c3c : #2ecc71;
+                                }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            horizontal-stretch: 1;
                         }
 
                         HorizontalLayout {
                             spacing: 4px;
-                            Rectangle {
-                                width: 8px;
-                                height: 8px;
-                                border-radius: 4px;
-                                background: tweak.disabled ? #e74c3c : #2ecc71;
+                            Button {
+                                text: "Edit";
+                                horizontal-stretch: 1;
+                                min-width: 72px;
+                                clicked => {
+                                    root.edit-tweak(tweak.name);
+                                }
                             }
 
-                            Text {
-                                text: tweak.disabled ? "Disabled" : "Enabled";
-                                font-size: 11px;
-                                color: tweak.disabled ? #e74c3c : #2ecc71;
+                            Button {
+                                text: tweak.disabled ? "Enable" : "Disable";
+                                horizontal-stretch: 1;
+                                min-width: 72px;
+                                clicked => {
+                                    root.toggle-tweak(tweak.name);
+                                }
                             }
-                        }
-                    }
 
-                    HorizontalLayout {
-                        horizontal-stretch: 1;
-                    }
-
-                    HorizontalLayout {
-                        spacing: 4px;
-                        Button {
-                            text: "Edit";
-                            horizontal-stretch: 1;
-                            min-width: 72px;
-                            clicked => {
-                                root.edit-tweak(tweak.name);
-                            }
-                        }
-
-                        Button {
-                            text: tweak.disabled ? "Enable" : "Disable";
-                            horizontal-stretch: 1;
-                            min-width: 72px;
-                            clicked => {
-                                root.toggle-tweak(tweak.name);
-                            }
-                        }
-
-                        Button {
-                            text: "Package";
-                            visible: root.dev-tools-available;
-                            horizontal-stretch: 1;
-                            min-width: 72px;
-                            clicked => {
-                                root.package-tweak(tweak.name);
+                            Button {
+                                text: "Package";
+                                visible: root.dev-tools-available;
+                                horizontal-stretch: 1;
+                                min-width: 72px;
+                                clicked => {
+                                    root.package-tweak(tweak.name);
+                                }
                             }
                         }
                     }
@@ -209,6 +257,7 @@ export component MainWindow inherits Window {
             color: #888;
             font-size: 12px;
             visible: root.status-message != "";
+            wrap: word-wrap;
         }
     }
 }
@@ -238,6 +287,11 @@ export component TweakEditor inherits Window {
             font-weight: 700;
             font-size: 16px;
         }
+        Rectangle {
+            height: 1px;
+            background: #e8e8ed;
+            horizontal-stretch: 1;
+        }
 
         Text {
             text: "Blacklisted Applications";
@@ -251,15 +305,17 @@ export component TweakEditor inherits Window {
                     spacing: 8px;
                     padding-top: 4px;
                     padding-bottom: 4px;
+
                     Text {
                         text: app;
                         vertical-alignment: center;
                         horizontal-stretch: 1;
+                        wrap: word-wrap;
                     }
 
                     Button {
                         text: "-";
-                        min-width: 28px;
+                        min-width: 40px;
                         clicked => {
                             root.remove-blacklisted(app);
                         }
@@ -281,7 +337,7 @@ export component TweakEditor inherits Window {
 
             Button {
                 text: "+ Add";
-                min-width: 60px;
+                min-width: 72px;
                 clicked => {
                     root.add-blacklisted(i-bl-input.text);
                     i-bl-input.text = "";
@@ -301,15 +357,17 @@ export component TweakEditor inherits Window {
                     spacing: 8px;
                     padding-top: 4px;
                     padding-bottom: 4px;
+
                     Text {
                         text: dep;
                         vertical-alignment: center;
                         horizontal-stretch: 1;
+                        wrap: word-wrap;
                     }
 
                     Button {
                         text: "-";
-                        min-width: 28px;
+                        min-width: 40px;
                         clicked => {
                             root.remove-framework-dep(dep);
                         }
@@ -331,7 +389,7 @@ export component TweakEditor inherits Window {
 
             Button {
                 text: "+ Add";
-                min-width: 60px;
+                min-width: 72px;
                 clicked => {
                     root.add-framework-dep(i-fw-input.text);
                     i-fw-input.text = "";

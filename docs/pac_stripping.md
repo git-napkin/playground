@@ -1,8 +1,8 @@
 # PAC Stripping (`arm64e` Bypass)
 
-## What it is there for
+## What it does
 
-Apple Silicon Macs natively run system processes using the `arm64e` ABI, which incorporates **Pointer Authentication Codes (PAC)**. PAC cryptographically signs function pointers in memory to prevent exploits.
+Apple Silicon Macs natively run system processes using the `arm64e` ABI, which incorporates Pointer Authentication Codes (PAC). PAC cryptographically signs function pointers in memory to prevent exploits.
 
 When Plugin Playground injects custom tweaks (`.dylib` files) into a system process, the injected library must load into the target process's memory space. If the target is running as `arm64e` with PAC enabled, loading unauthenticated binaries can cause kernel panics or PAC violations.
 
@@ -18,12 +18,11 @@ PAC stripping is implemented in `syphon/exe.c` (the "Depacify" engine):
 6. The executable is re-signed with ad-hoc SHA-256 via `SecCodeSignerCreate`.
 7. `fangs_hook` spawns the depacified copy instead of the original.
 
-## Alternative: Native `arm64e` Support
+## Alternative: native `arm64e` support
 
-If you prefer to compile Plugin Playground natively as `arm64e` (using Xcode) and do NOT want to rely on PAC stripping, you must enable the `arm64e` preview ABI on your Mac. Apple disables third-party `arm64e` execution by default.
+Compile Plugin Playground as native `arm64e` (with Xcode) and skip PAC stripping. Apple disables third-party `arm64e` execution by default, so you need to enable the preview ABI:
 
-To enable the native `arm64e` ABI:
 1. Run: `sudo nvram boot-args="-arm64e_preview_abi"`
 2. Reboot.
 
-*(Note: Modifying `boot-args` requires SIP to be appropriately disabled or adjusted from Recovery Mode.)*
+Modifying `boot-args` requires SIP disabled or adjusted from Recovery Mode.

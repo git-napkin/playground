@@ -6,7 +6,6 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -181,7 +180,6 @@ static void scan_tweaks(const char *subdir) {
 }
 
 static void setup_reload_handler(void) {
-    signal(SIGUSR1, SIG_IGN);
     dispatch_source_t source = dispatch_source_create(
         DISPATCH_SOURCE_TYPE_SIGNAL, SIGUSR1, 0,
         dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0));

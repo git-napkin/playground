@@ -1,5 +1,5 @@
 {
-  description = "Plugin Playground - An open-source general-purpose runtime tweak system for macOS";
+  description = "Plugin Playground - Open-source runtime tweak system for macOS";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -66,7 +66,7 @@
           '';
 
           meta = with pkgs.lib; {
-            description = "General-purpose runtime tweak system for macOS Apple Silicon";
+            description = "Runtime tweak system for macOS Apple Silicon";
             homepage = "https://github.com/CoreBedtime/playground";
             license = licenses.mit;
             maintainers = [ ];

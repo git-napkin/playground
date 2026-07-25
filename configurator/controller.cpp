@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <memory>
+#include <sys/stat.h>
 
 Controller::Controller(MainWindow& window)
     : m_window(window)
