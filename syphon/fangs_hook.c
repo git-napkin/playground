@@ -51,13 +51,6 @@ static os_unfair_lock g_fangs_opts_lock = OS_UNFAIR_LOCK_INIT;
 #define PRIO_DARWIN_ROLE_UI 0x2
 #define PRIO_DARWIN_ROLE_UI_NON_FOCAL 0x4
 
-static bool flag_file_exists(const char *filename) {
-    char pathbuf[PATH_MAX];
-    if (snprintf(pathbuf, sizeof(pathbuf), "%s%s", SUPPORT_PATH,
-                 filename) >= (int)sizeof(pathbuf))
-        return false;
-    return access(pathbuf, F_OK) == 0;
-}
 
 static void load_ammonia_blacklist(void) {
     char pathbuf[PATH_MAX];
@@ -344,7 +337,7 @@ __attribute__((constructor)) static void fangs_hook_init(void) {
     if (disable_xpcproxy_injection)
         syslog(LOG_INFO, "fangs_hook: xpcproxy propagation disabled");
 
-    GetDarwinRoleNp =
+    *(void **)&GetDarwinRoleNp =
         dlsym(RTLD_DEFAULT, "posix_spawnattr_get_darwin_role_np");
     if (!GetDarwinRoleNp)
         syslog(LOG_WARNING,
@@ -358,7 +351,7 @@ __attribute__((constructor)) static void fangs_hook_init(void) {
         return;
     }
 
-    void (*gum_init)(void) = dlsym(gum, "gum_init_embedded");
+    void (*gum_init)(void) = (void (*)(void))dlsym(gum, "gum_init_embedded");
     if (!gum_init) {
         syslog(LOG_ERR, "fangs_hook: gum_init_embedded not found: %s",
                dlerror());
@@ -368,7 +361,7 @@ __attribute__((constructor)) static void fangs_hook_init(void) {
     gum_init();
 
     void *(*gum_interceptor_obtain)(void) =
-        dlsym(gum, "gum_interceptor_obtain");
+        (void *(*)(void))dlsym(gum, "gum_interceptor_obtain");
     if (!gum_interceptor_obtain) {
         syslog(LOG_ERR, "fangs_hook: gum_interceptor_obtain not found: %s",
                dlerror());
@@ -382,11 +375,11 @@ __attribute__((constructor)) static void fangs_hook_init(void) {
     typedef int (*GumInterceptorEndTransaction_t)(void *);
 
     GumInterceptorBeginTransaction_t gum_interceptor_begin_transaction =
-        dlsym(gum, "gum_interceptor_begin_transaction");
+        (GumInterceptorBeginTransaction_t)dlsym(gum, "gum_interceptor_begin_transaction");
     GumInterceptorReplace_t gum_interceptor_replace =
-        dlsym(gum, "gum_interceptor_replace");
+        (GumInterceptorReplace_t)dlsym(gum, "gum_interceptor_replace");
     GumInterceptorEndTransaction_t gum_interceptor_end_transaction =
-        dlsym(gum, "gum_interceptor_end_transaction");
+        (GumInterceptorEndTransaction_t)dlsym(gum, "gum_interceptor_end_transaction");
 
     if (!gum_interceptor_begin_transaction ||
         !gum_interceptor_replace || !gum_interceptor_end_transaction) {
@@ -403,7 +396,7 @@ __attribute__((constructor)) static void fangs_hook_init(void) {
         syslog(LOG_ERR, "fangs_hook: failed to find posix_spawn");
     } else {
         int ret = gum_interceptor_replace(interceptor, posix_spawn_addr,
-                                          SpawnNew, NULL, (void *)&SpawnOld);
+                                          (void *)SpawnNew, NULL, (void *)&SpawnOld);
         if (ret != 0 || SpawnOld == NULL)
             syslog(LOG_ERR, "fangs_hook: posix_spawn replace failed (%d)",
                    ret);
@@ -417,7 +410,7 @@ __attribute__((constructor)) static void fangs_hook_init(void) {
         syslog(LOG_ERR, "fangs_hook: failed to find posix_spawnp");
     } else {
         int ret = gum_interceptor_replace(interceptor, posix_spawnp_addr,
-                                          SpawnPNew, NULL, (void *)&SpawnPOld);
+                                          (void *)SpawnPNew, NULL, (void *)&SpawnPOld);
         if (ret != 0 || SpawnPOld == NULL)
             syslog(LOG_ERR, "fangs_hook: posix_spawnp replace failed (%d)",
                    ret);

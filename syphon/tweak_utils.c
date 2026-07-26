@@ -67,7 +67,6 @@ bool macho_has_framework(const char *base, size_t size, const char *framework) {
 
     char pattern[PATH_MAX];
     snprintf(pattern, sizeof(pattern), "/%s.framework/", framework);
-    size_t plen = strlen(pattern);
 
     const char *end = base + size;
     const struct load_command *cursor = cmds;

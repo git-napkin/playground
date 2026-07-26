@@ -164,8 +164,7 @@ int main(int argc, const char *argv[]) {
     void *handle =
         dlopen("/usr/lib/system/libsystem_kernel.dylib", RTLD_GLOBAL | RTLD_LAZY);
     if (handle) {
-        _thread_convert_thread_state =
-            dlsym(handle, "thread_convert_thread_state");
+        *(void **)&_thread_convert_thread_state = dlsym(handle, "thread_convert_thread_state");
         dlclose(handle);
     }
 
@@ -174,7 +173,7 @@ int main(int argc, const char *argv[]) {
         return 1;
     }
 
-    arm_thread_state64_t thread_state = {}, machine_thread_state = {};
+    arm_thread_state64_t thread_state = {0}, machine_thread_state = {0};
     thread_state_flavor_t thread_flavor = ARM_THREAD_STATE64;
     mach_msg_type_number_t thread_flavor_count = ARM_THREAD_STATE64_COUNT;
     mach_msg_type_number_t machine_thread_flavor_count =

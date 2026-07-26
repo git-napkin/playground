@@ -137,7 +137,7 @@ static void try_load_tweak(const char *dir, const char *d_name,
         return;
     }
 
-    void (*LoadFunc)(void *) = dlsym(handle, "LoadFunction");
+    void (*LoadFunc)(void *) = (void (*)(void *))dlsym(handle, "LoadFunction");
     if (LoadFunc != NULL) {
         LoadFunc(g_interceptor);
         syslog(LOG_INFO, "opener: called LoadFunction in %s", d_name);
@@ -234,7 +234,7 @@ __attribute__((constructor)) static void opener_init(void) {
         return;
     }
 
-    void (*gum_init)(void) = dlsym(gum, "gum_init_embedded");
+    void (*gum_init)(void) = (void (*)(void))dlsym(gum, "gum_init_embedded");
     if (!gum_init) {
         syslog(LOG_ERR, "opener: gum_init_embedded not found: %s", dlerror());
         return;
@@ -242,7 +242,7 @@ __attribute__((constructor)) static void opener_init(void) {
     gum_init();
 
     void *(*gum_interceptor_obtain)(void) =
-        dlsym(gum, "gum_interceptor_obtain");
+        (void *(*)(void))dlsym(gum, "gum_interceptor_obtain");
     if (!gum_interceptor_obtain) {
         syslog(LOG_ERR, "opener: gum_interceptor_obtain not found: %s",
                dlerror());

@@ -68,14 +68,14 @@ char *getready_process(const char *path) {
 
     log_info("[bootstrap] depacifying executable: %s", bundle_exec_tmp);
     if (!depacify_file_in_place(bundle_exec_tmp)) {
-        log_error("[bootstrap] failed to depacify bundle executable");
+        syslog(LOG_ERR, "[bootstrap] failed to depacify bundle executable");
         return strdup(bundle_exec_tmp);
     }
 
     log_info("[bootstrap] resigning bundle: %s", dst_bundle_path);
     if (!resign_bundle(dst_bundle_path))
-        log_error("[bootstrap] failed to resign bundle, continuing anyway");
+        syslog(LOG_ERR, "[bootstrap] failed to resign bundle, continuing anyway");
 
-    log_info("[bootstrap] using depacified bundle");
+    syslog(LOG_INFO, "[bootstrap] using depacified bundle");
     return strdup(bundle_exec_tmp);
 }
