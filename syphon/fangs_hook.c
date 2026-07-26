@@ -245,6 +245,15 @@ static int spawn_with_env(int (*spawn_fn)(pid_t *, const char *,
     if (ab != NULL && GetDarwinRoleNp != NULL)
         GetDarwinRoleNp(ab, &darwin_role);
 
+    os_unfair_lock_lock(&g_fangs_opts_lock);
+    bool pauseInjection = g_fangs_opts.pauseInjection;
+    os_unfair_lock_unlock(&g_fangs_opts_lock);
+    if (pauseInjection) {
+        syslog(LOG_INFO, "fangs_hook: injection paused, skipping for '%s'",
+               path ? path : "(null)");
+        goto Spawn;
+    }
+
     if (strcmp(path, "/usr/libexec/xpcproxy") == 0) {
         if (!disable_xpcproxy_injection) {
             syslog(LOG_INFO, "fangs_hook: propagating into xpcproxy");

@@ -8,6 +8,15 @@ if [ "$(id -u)" -ne 0 ]; then
     exec sudo "$0" "$@"
 fi
 
+echo "Pausing injection to stop new spawns from referencing deleted dylibs..."
+if [ -f "/opt/pluginplayground/current.options" ]; then
+    defaults write /opt/pluginplayground/current.options pauseInjection -bool true
+fi
+
+echo "Unloading grant daemon..."
+launchctl bootout system/com.pluginplayground.grant 2>/dev/null || true
+sleep 1
+
 echo "Removing Configurator application..."
 rm -rf "/Applications/Plugin Playground.app"
 
